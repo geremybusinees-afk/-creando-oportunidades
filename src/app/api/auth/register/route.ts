@@ -1,0 +1,62 @@
+import { NextResponse } from 'next/server';
+import { hash } from 'bcryptjs';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+
+export async function POST(request: Request) {
+  try {
+    const { email, password, name } = await request.json();
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { success: false, error: 'Email y contraseña requeridos' },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { success: false, error: 'La contraseña debe tener al menos 8 caracteres' },
+        { status: 400 }
+      );
+    }
+
+    const [existing] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: 'Este email ya está registrado' },
+        { status: 409 }
+      );
+    }
+
+    const hashedPassword = await hash(password, 12);
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        email,
+        password: hashedPassword,
+        name: name || email.split('@')[0],
+      })
+      .returning();
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: { id: newUser.id, email: newUser.email },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error('Registration error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Error al registrar usuario' },
+      { status: 500 }
+    );
+  }
+}
