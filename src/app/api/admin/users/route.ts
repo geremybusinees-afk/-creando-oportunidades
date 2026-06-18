@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { desc } from 'drizzle-orm';
 
@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 403 });
   }
 
-  const allUsers = await db
+  const allUsers = await getDb()
     .select({
       id: users.id,
       email: users.email,

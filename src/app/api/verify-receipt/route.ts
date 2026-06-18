@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { verifications, users, config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifyReceiptWithAI } from '@/lib/ai-verify';
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const [user] = await db
+    const [user] = await getDb()
       .select()
       .from(users)
       .where(eq(users.id, userId))
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     }
 
     // Obtener configuración
-    const configRows = await db.select().from(config);
+    const configRows = await getDb().select().from(config);
     const configMap = Object.fromEntries(configRows.map((c) => [c.key, c.value]));
     const landingConfig: LandingConfig = {
       landingHeadline: configMap.landingHeadline || '',
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     });
 
     // Guardar verificación
-    await db
+    await getDb()
       .insert(verifications)
       .values({
         userId,
@@ -74,12 +74,12 @@ export async function POST(request: Request) {
 
     // Actualizar usuario
     if (result.verified) {
-      await db
+      await getDb()
         .update(users)
         .set({ status: 'verified', updatedAt: new Date() })
         .where(eq(users.id, userId));
     } else {
-      await db
+      await getDb()
         .update(users)
         .set({ maxAttempts: user.maxAttempts - 1, updatedAt: new Date() })
         .where(eq(users.id, userId));

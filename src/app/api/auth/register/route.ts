@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { hash } from 'bcryptjs';
-import { db } from '@/lib/db';
+import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const [existing] = await db
+    const [existing] = await getDb()
       .select()
       .from(users)
       .where(eq(users.email, email))
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     const hashedPassword = await hash(password, 12);
-    const [newUser] = await db
+    const [newUser] = await getDb()
       .insert(users)
       .values({
         email,

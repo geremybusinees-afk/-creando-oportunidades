@@ -3,25 +3,45 @@ import type { NextRequest } from 'next/server';
 
 const protectedRoutes = ['/dashboard'];
 const adminRoutes = ['/admin'];
-const publicRoutes = ['/', '/login', '/register'];
 
 export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  const isProtected = protectedRoutes.some((route) => path.startsWith(route));
-  const isAdmin = adminRoutes.some((route) => path.startsWith(route));
-  const isPublic = publicRoutes.some((route) => path === route);
 
-  const sessionToken = request.cookies.get('next-auth.session-token')?.value
-    || request.cookies.get('__Secure-next-auth.session-token')?.value;
+  // Rutas públicas permitidas sin autenticación
+  const isPublic =
+    path === '/' ||
+    path === '/login' ||
+    path.startsWith('/_next') ||
+    path.startsWith('/api') ||
+    path.startsWith('/favicon') ||
+    path.startsWith('/public');
 
-  if (isAdmin && !sessionToken) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  if (isPublic) {
+    return NextResponse.next();
   }
 
-  if (isProtected && !sessionToken) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('callbackUrl', path);
-    return NextResponse.redirect(loginUrl);
+  // Verificar si la ruta es protegida
+  const isProtected = protectedRoutes.some((route) => path.startsWith(route));
+  const isAdmin = adminRoutes.some((route) => path.startsWith(route));
+
+  // Si es admin, redirigir al login si no hay sesión
+  if (isAdmin) {
+    const sessionToken = request.cookies.get('next-auth.session-token')?.value
+      || request.cookies.get('__Secure-next-auth.session-token')?.value;
+    if (!sessionToken) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+  }
+
+  // Si es dashboard, redirigir al login si no hay sesión
+  if (isProtected) {
+    const sessionToken = request.cookies.get('next-auth.session-token')?.value
+      || request.cookies.get('__Secure-next-auth.session-token')?.value;
+    if (!sessionToken) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('callbackUrl', path);
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
   return NextResponse.next();

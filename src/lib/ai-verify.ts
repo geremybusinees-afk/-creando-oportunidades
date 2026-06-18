@@ -1,9 +1,16 @@
 import OpenAI from 'openai';
 import type { VerificationResult, LandingConfig } from '@/lib/types';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openai: OpenAI | null = null;
+
+function getOpenAI() {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+    openai = new OpenAI({ apiKey });
+  }
+  return openai;
+}
 
 interface VerifyOptions {
   imageUrl: string;
@@ -13,6 +20,15 @@ interface VerifyOptions {
 
 export async function verifyReceiptWithAI(options: VerifyOptions): Promise<VerificationResult> {
   const { imageUrl, userEmail, config } = options;
+  const client = getOpenAI();
+
+  if (!client) {
+    return {
+      verified: false,
+      confidence: 0,
+      reason: 'Servicio de IA no configurado. Contacta al administrador.',
+    };
+  }
 
   const prompt = `Eres un verificador de comprobantes de registro para "${config.platformName}".
 
@@ -38,7 +54,7 @@ Criterios de verificación:
 IMPORTANTE: Solo marca verified=true si tienes ALTA confianza (80%+) de que el registro es legítimo. Si hay duda, marca false.`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await client.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {

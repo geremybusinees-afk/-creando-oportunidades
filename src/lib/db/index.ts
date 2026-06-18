@@ -16,5 +16,3 @@ export function getDb() {
   return _db;
 }
 
-// Convenience export for when DB is required
-export const db = getDb();
