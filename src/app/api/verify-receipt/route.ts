@@ -14,6 +14,9 @@ export async function POST(request: Request) {
     }
 
     const userId = parseInt(session.user.id);
+    if (Number.isNaN(userId)) {
+      return NextResponse.json({ success: false, error: 'ID de usuario inválido' }, { status: 400 });
+    }
 
     const { imageUrl } = await request.json();
     if (!imageUrl) {
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
     if (result.verified) {
       await getDb()
         .update(users)
-        .set({ status: 'verified', updatedAt: new Date() })
+        .set({ status: 'verified', maxAttempts: 3, updatedAt: new Date() })
         .where(eq(users.id, userId));
     } else {
       await getDb()
