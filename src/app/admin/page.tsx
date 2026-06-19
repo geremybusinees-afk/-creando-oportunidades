@@ -5,7 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings, Users, TrendingUp, Edit3, LogOut, Search,
-  CheckCircle2, AlertCircle, MonitorPlay
+  CheckCircle2, AlertCircle, MonitorPlay, Upload,
+  Image as ImageIcon, Trash2, Loader2
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -15,6 +16,7 @@ export default function AdminPage() {
   const [userList, setUserList] = useState<any[]>([]);
   const [configData, setConfigData] = useState<Record<string, string>>({});
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
+  const [uploadingRef, setUploadingRef] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -69,6 +71,64 @@ export default function AdminPage() {
       }
     } catch (e) {
       console.error('Error saving config:', e);
+    }
+  };
+
+  const handleReferenceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Solo se permiten imágenes PNG, JPG o WebP');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('La imagen debe ser menor a 10MB');
+      return;
+    }
+
+    setUploadingRef(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/admin/reference-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setLocalConfig(prev => ({ ...prev, referenceImageUrl: data.data.url }));
+        setConfigData(prev => ({ ...prev, referenceImageUrl: data.data.url }));
+      } else {
+        alert(data.error || 'Error al subir la imagen');
+      }
+    } catch {
+      alert('Error de conexión al subir la imagen');
+    } finally {
+      setUploadingRef(false);
+    }
+  };
+
+  const handleRemoveReferenceImage = async () => {
+    if (!confirm('¿Eliminar la imagen de referencia?')) return;
+
+    try {
+      const res = await fetch('/api/admin/reference-image', { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        const newConfig = { ...localConfig };
+        delete newConfig.referenceImageUrl;
+        setLocalConfig(newConfig);
+        const newConfigData = { ...configData };
+        delete newConfigData.referenceImageUrl;
+        setConfigData(newConfigData);
+      }
+    } catch {
+      alert('Error al eliminar la imagen');
     }
   };
 
@@ -300,6 +360,81 @@ export default function AdminPage() {
                       />
                       <p className="text-xs text-slate-500 mt-1">Separadas por coma. La IA buscará estas palabras en el comprobante.</p>
                     </div>
+                  </div>
+                </div>
+
+                <div className="h-px w-full bg-slate-100" />
+
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                    <span className="w-8 h-8 rounded bg-amber-100 text-amber-600 flex items-center justify-center mr-3"><ImageIcon className="w-4 h-4" /></span>
+                    Imagen de Referencia (Comparación Visual)
+                  </h3>
+                  <div className="pl-11 space-y-5">
+                    <p className="text-sm text-slate-500">
+                      Sube una captura de pantalla de <strong>cómo se ve un registro exitoso</strong> en la plataforma externa.
+                      Cuando los usuarios suban su comprobante, la IA lo comparará con esta imagen de referencia para verificar que sea similar.
+                    </p>
+
+                    {localConfig.referenceImageUrl ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                        <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-white max-w-md mx-auto">
+                          <img
+                            src={localConfig.referenceImageUrl}
+                            alt="Referencia"
+                            className="w-full h-auto object-contain max-h-[300px]"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex-1 cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              onChange={handleReferenceImageUpload}
+                              className="hidden"
+                              disabled={uploadingRef}
+                            />
+                            <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">
+                              {uploadingRef ? (
+                                <><Loader2 className="w-4 h-4 animate-spin" /> Subiendo...</>
+                              ) : (
+                                <><Upload className="w-4 h-4" /> Reemplazar Imagen</>
+                              )}
+                            </div>
+                          </label>
+                          <button
+                            onClick={handleRemoveReferenceImage}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 border border-rose-200 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" /> Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block">
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={handleReferenceImageUpload}
+                          className="hidden"
+                          disabled={uploadingRef}
+                        />
+                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition-colors">
+                          {uploadingRef ? (
+                            <div className="flex flex-col items-center">
+                              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
+                              <p className="text-sm font-medium text-slate-600">Subiendo imagen...</p>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <Upload className="w-10 h-10 text-slate-400 mb-3" />
+                              <p className="text-sm font-semibold text-slate-700 mb-1">Haz clic para subir la imagen de referencia</p>
+                              <p className="text-xs text-slate-500">PNG, JPG o WebP • Máximo 10MB</p>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    )}
                   </div>
                 </div>
 

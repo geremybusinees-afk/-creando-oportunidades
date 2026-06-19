@@ -53,6 +53,8 @@ export async function POST(request: Request) {
       driveLink: configMap.driveLink || '',
       platformName: configMap.platformName || 'Plataforma',
       platformKeywords: configMap.platformKeywords || '',
+      referenceImageUrl: configMap.referenceImageUrl || '',
+      referenceImageEnabled: configMap.referenceImageEnabled || 'true',
     };
 
     // Llamar a la IA

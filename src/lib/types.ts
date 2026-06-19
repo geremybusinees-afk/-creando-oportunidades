@@ -5,6 +5,8 @@ export interface LandingConfig {
   driveLink: string;
   platformName: string;
   platformKeywords: string;
+  referenceImageUrl?: string;
+  referenceImageEnabled?: string;
 }
 
 export interface VerificationResult {
