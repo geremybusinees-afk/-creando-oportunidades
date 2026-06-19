@@ -197,6 +197,14 @@ export default function LandingPage() {
                 <span>•</span>
                 <span>100% Gratis Hoy</span>
               </div>
+              <div className="text-center mt-5 pt-4 border-t border-slate-700/50">
+                <p className="text-sm text-slate-400">
+                  ¿Ya tienes una cuenta?{' '}
+                  <a href="/login" className="text-blue-400 hover:text-blue-300 font-semibold underline underline-offset-2 transition-colors">
+                    Accede a login aquí
+                  </a>
+                </p>
+              </div>
             </form>
           </div>
         </div>
