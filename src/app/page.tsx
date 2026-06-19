@@ -38,7 +38,7 @@ export default function LandingPage() {
       setTimeout(() => {
         setNotifications(prev => prev.filter(n => n.id !== id));
       }, 4000);
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
