@@ -12,13 +12,33 @@ export default function LandingPage() {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showNotification, setShowNotification] = useState(false);
+  const [notifications, setNotifications] = useState<Array<{ id: number; name: string; country: string }>>([]);
+
+  const nombres = [
+    'Julia', 'María', 'Camila', 'Valentina', 'Sofía', 'Isabella', 'Gabriela',
+    'Luciana', 'Ximena', 'Daniela', 'Fernanda', 'Alejandra', 'Paula', 'Andrea',
+    'Carolina', 'Verónica', 'Patricia', 'Rosa', 'Ana', 'Claudia', 'Laura',
+    'Carmen', 'Teresa', 'Elena', 'Silvia', 'Diana', 'Mónica', 'Cristina',
+    'Adriana', 'Liliana', 'Mariana', 'Fabiola', 'Raquel', 'Angélica', 'Esther',
+  ];
+
+  const paises = [
+    'México', 'Colombia', 'Argentina', 'Perú', 'Chile', 'Ecuador',
+    'Venezuela', 'Guatemala', 'Bolivia', 'República Dominicana', 'Honduras',
+    'Paraguay', 'El Salvador', 'Nicaragua', 'Costa Rica', 'Panamá',
+    'Uruguay', 'Puerto Rico', 'España', 'Estados Unidos',
+  ];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setShowNotification(true);
-      setTimeout(() => setShowNotification(false), 3000);
-    }, 15000);
+      const nombre = nombres[Math.floor(Math.random() * nombres.length)];
+      const pais = paises[Math.floor(Math.random() * paises.length)];
+      const id = Date.now();
+      setNotifications(prev => [...prev, { id, name: nombre, country: pais }]);
+      setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+      }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -92,9 +112,20 @@ export default function LandingPage() {
           <h1 className="text-4xl md:text-6xl font-extrabold leading-[1.1] mb-6 tracking-tight animate-fade-in-up">
             Domina la Asistencia Virtual y Multiplica tus Ingresos
           </h1>
-          <p className="text-lg text-slate-400 mb-10 leading-relaxed animate-fade-in-up">
+          <p className="text-lg text-slate-400 mb-8 leading-relaxed animate-fade-in-up">
             Regístrate gratis a este mini-curso y descubre el método paso a paso para conseguir clientes internacionales sin experiencia previa.
           </p>
+
+          <div className="mb-8 animate-fade-in-up flex justify-center">
+            <div className="relative group">
+              <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 rounded-2xl blur-xl opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+              <img
+                src="https://cdn.phototourl.com/free/2026-06-19-a9615207-ecc1-433d-808d-c81b10c690d1.png"
+                alt="Estudiantes exitosos"
+                className="relative w-72 md:w-80 lg:w-96 rounded-xl object-cover shadow-2xl border border-white/10"
+              />
+            </div>
+          </div>
 
           <div className="bg-slate-800/40 backdrop-blur-xl p-8 rounded-3xl border border-slate-700/50 shadow-[0_0_40px_-15px_rgba(59,130,246,0.3)] animate-fade-in-up">
             <h3 className="text-xl font-bold mb-6 flex items-center">
@@ -219,14 +250,21 @@ export default function LandingPage() {
         </div>
       </main>
 
-      <div className={`fixed bottom-6 left-6 bg-white text-slate-900 px-4 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3 transition-all duration-500 z-50 ${showNotification ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0 pointer-events-none'}`}>
-        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-          <Bell className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-sm font-bold">Un usuario de Colombia</p>
-          <p className="text-xs text-slate-500">acaba de registrarse al curso.</p>
-        </div>
+      <div className="fixed bottom-6 left-4 md:left-6 z-50 flex flex-col-reverse gap-2 max-w-[280px] md:max-w-[320px]">
+        {notifications.map((n, i) => (
+          <div
+            key={n.id}
+            className="animate-notification-in bg-white text-slate-900 px-4 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3"
+          >
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center text-white shrink-0">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold truncate">{n.name} *** de {n.country}</p>
+              <p className="text-xs text-slate-500">se ha registrado con éxito ✓</p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
