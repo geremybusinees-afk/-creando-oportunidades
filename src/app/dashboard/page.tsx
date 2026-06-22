@@ -26,6 +26,7 @@ export default function DashboardPage() {
 
   // Video state
   const [videoConfig, setVideoConfig] = useState<{ videoUrl: string; videoType: string } | null>(null);
+  const [publicConfig, setPublicConfig] = useState<Record<string, string>>({});
   const [videoProgress, setVideoProgress] = useState(0); // segundos vistos
   const [videoDuration, setVideoDuration] = useState(0); // duración total
   const [videoEnded, setVideoEnded] = useState(false);
@@ -59,6 +60,7 @@ export default function DashboardPage() {
       .then(res => res.json())
       .then(data => {
         if (data.success && data.data) {
+          setPublicConfig(data.data);
           setVideoConfig({
             videoUrl: data.data.videoUrl || '',
             videoType: data.data.videoType || 'link',
@@ -518,7 +520,12 @@ export default function DashboardPage() {
                       <p className="text-rose-700 font-medium text-sm">{error}</p>
                       {remainingAttempts > 0 && (
                         <p className="text-rose-500 text-xs mt-1">
-                          Te quedan {remainingAttempts} intentos
+                          Te quedan <strong>{remainingAttempts}</strong> intento{remainingAttempts !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                      {error.includes('No se pudo') && (
+                        <p className="text-rose-400 text-xs mt-1">
+                          💡 Asegúrate de que en la captura se vea: tu email, el nombre de la plataforma y la confirmación de registro.
                         </p>
                       )}
                     </div>
@@ -539,7 +546,7 @@ export default function DashboardPage() {
                     Haz clic en el botón de abajo, completa tu registro en la página externa y verifica tu correo electrónico.
                   </p>
                   <a
-                    href="#"
+                    href={publicConfig.offerLink || '#'}
                     target="_blank"
                     rel="noreferrer"
                     className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all flex items-center justify-between group"
@@ -661,7 +668,7 @@ export default function DashboardPage() {
                   Hemos preparado una carpeta segura con todos los videos y recursos. Puedes descargarlos a tu computadora o verlos directamente online.
                 </p>
                 <a
-                  href="#"
+                  href={publicConfig.driveLink || '#'}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-8 rounded-xl shadow-xl shadow-emerald-600/30 transition-transform transform hover:-translate-y-1 w-full md:w-auto"
