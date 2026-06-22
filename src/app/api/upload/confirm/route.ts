@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { head } from '@vercel/blob';
 
 // POST /api/upload/confirm — Confirmar subida y devolver URL final del comprobante
 export async function POST(request: Request) {
@@ -11,35 +10,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { uploadUrl, pathname } = body;
+    const { uploadUrl } = body;
 
-    if (!uploadUrl && !pathname) {
-      return NextResponse.json({ success: false, error: 'uploadUrl o pathname requerido' }, { status: 400 });
+    if (!uploadUrl) {
+      return NextResponse.json({ success: false, error: 'uploadUrl requerido' }, { status: 400 });
     }
 
-    // Obtener la URL final del blob usando head()
-    let finalUrl = uploadUrl;
-
-    try {
-      const blobInfo = await head(uploadUrl || pathname);
-      if (blobInfo?.url) {
-        finalUrl = blobInfo.url;
-      }
-    } catch {
-      // Si head() falla, construir URL desde uploadUrl (sin query params)
-      if (uploadUrl) {
-        try {
-          const parsedUrl = new URL(uploadUrl);
-          finalUrl = `${parsedUrl.origin}${parsedUrl.pathname}`;
-        } catch {
-          // mantiene el uploadUrl original
-        }
-      }
-    }
-
+    // La URL de Supabase Storage ya es pública y definitiva
     return NextResponse.json({
       success: true,
-      data: { url: finalUrl },
+      data: { url: uploadUrl },
     });
   } catch (error) {
     console.error('Error confirming upload:', error);

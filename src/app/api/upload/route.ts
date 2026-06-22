@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
 
-// POST /api/upload — Recibir archivo y subirlo directamente a Vercel Blob
+const SUPABASE_URL = 'https://ixmuvazbuepcedguvbpx.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const BUCKET = 'receipts';
+
+// POST /api/upload — Recibir archivo y subirlo directamente a Supabase Storage
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -19,25 +22,42 @@ export async function POST(request: Request) {
 
     const timestamp = Date.now();
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const pathname = `receipts/${session.user.id}/${timestamp}-${safeFileName}`;
+    const pathname = `${session.user.id}/${timestamp}-${safeFileName}`;
 
-    // Subir directamente a Vercel Blob
-    const blob = await put(pathname, file, {
-      access: 'public',
-      addRandomSuffix: false,
+    // Leer el archivo como ArrayBuffer y convertirlo a Uint8Array
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+
+    // Subir a Supabase Storage usando la API REST
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${pathname}`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-upsert': 'true',
+      },
+      body: buffer,
     });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error(`Supabase upload failed: ${uploadRes.status} ${errText}`);
+    }
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${pathname}`;
 
     return NextResponse.json({
       success: true,
       data: {
-        url: blob.url,
-        pathname: blob.pathname,
+        url: publicUrl,
+        pathname,
       },
     });
   } catch (error) {
     console.error('Error uploading file:', error);
     return NextResponse.json(
-      { success: false, error: 'Error al subir el archivo. Verifica que Vercel Blob esté configurado.' },
+      { success: false, error: 'Error al subir el archivo' },
       { status: 500 }
     );
   }
