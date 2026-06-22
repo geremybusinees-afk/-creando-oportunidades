@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     const userId = searchParams.get('userId');
 
     if (!userId) {
-      // Devolver todos los usuarios con sus verficaciones pendientes
+      // Devolver todos los usuarios con sus verificaciones pendientes
       const allUsers = await getDb()
         .select({
           id: users.id,
@@ -145,16 +145,21 @@ export async function GET(request: Request) {
         .from(users)
         .orderBy(desc(users.createdAt));
 
-      // Obtener la última verificación de cada usuario
+      // Obtener la última verificación de cada usuario con manejo de errores individual
       const usersWithVerifications = await Promise.all(
         allUsers.map(async (u) => {
-          const [lastVer] = await getDb()
-            .select()
-            .from(verifications)
-            .where(eq(verifications.userId, u.id))
-            .orderBy(desc(verifications.createdAt))
-            .limit(1);
-          return { ...u, verification: lastVer || null };
+          try {
+            const [lastVer] = await getDb()
+              .select()
+              .from(verifications)
+              .where(eq(verifications.userId, u.id))
+              .orderBy(desc(verifications.createdAt))
+              .limit(1);
+            return { ...u, verification: lastVer || null };
+          } catch (err) {
+            console.error(`Error fetching verification for user ${u.id}:`, err);
+            return { ...u, verification: null };
+          }
         })
       );
 
@@ -174,7 +179,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ success: true, data: userVerifications });
   } catch (error) {
-    console.error('Error fetching verifications:', error);
+    console.error('Error fetching verifications:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return NextResponse.json(
       { success: false, error: 'Error al obtener verificaciones' },
       { status: 500 }

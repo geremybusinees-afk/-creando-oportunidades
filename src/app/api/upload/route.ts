@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { issueSignedToken, presignUrl } from '@vercel/blob';
+import { put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
 
-// POST /api/upload — Generar URL firmada para subir comprobante directo a Blob
+// POST /api/upload — Recibir archivo y subirlo directamente a Vercel Blob
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -10,39 +10,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { filename } = body;
+    const formData = await request.formData();
+    const file = formData.get('file') as File | null;
 
-    if (!filename) {
-      return NextResponse.json({ success: false, error: 'Nombre de archivo requerido' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 });
     }
 
     const timestamp = Date.now();
-    const safeFileName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const pathname = `receipts/${session.user.id}/${timestamp}-${safeFileName}`;
 
-    // Generar token firmado para subida (sin restricciones de tipo/tamaño)
-    const signedToken = await issueSignedToken({
-      pathname,
-      operations: ['put'],
-      maximumSizeInBytes: 500 * 1024 * 1024, // 500MB máximo general
-    });
-
-    // Generar URL presignada para PUT
-    const { presignedUrl: uploadUrl } = await presignUrl(signedToken, {
-      pathname,
-      operation: 'put',
+    // Subir directamente a Vercel Blob
+    const blob = await put(pathname, file, {
       access: 'public',
-    } as any);
+      addRandomSuffix: false,
+    });
 
     return NextResponse.json({
       success: true,
-      data: { uploadUrl, pathname },
+      data: {
+        url: blob.url,
+        pathname: blob.pathname,
+      },
     });
   } catch (error) {
-    console.error('Error generating upload URL:', error);
+    console.error('Error uploading file:', error);
     return NextResponse.json(
-      { success: false, error: 'Error al generar URL de subida' },
+      { success: false, error: 'Error al subir el archivo. Verifica que Vercel Blob esté configurado.' },
       { status: 500 }
     );
   }
