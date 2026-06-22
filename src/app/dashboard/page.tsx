@@ -173,23 +173,54 @@ export default function DashboardPage() {
     }, 500);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedImage);
-
-      const uploadRes = await fetch('/api/upload', {
+      // Paso 1: Obtener URL firmada para subida directa a Blob
+      const urlRes = await fetch('/api/upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: selectedImage.name,
+          contentType: selectedImage.type,
+          fileSize: selectedImage.size,
+        }),
       });
 
-      const uploadData = await uploadRes.json();
-      if (!uploadData.success) {
-        throw new Error(uploadData.error || 'Error al subir imagen');
+      const urlData = await urlRes.json();
+      if (!urlData.success) {
+        throw new Error(urlData.error || 'Error al preparar subida');
       }
 
+      const { uploadUrl, pathname } = urlData.data;
+
+      // Paso 2: Subir archivo DIRECTAMENTE a Vercel Blob (sin pasar por el servidor)
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: selectedImage,
+        headers: { 'Content-Type': selectedImage.type },
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('Error al subir la imagen al almacenamiento');
+      }
+
+      // Paso 3: Confirmar subida y obtener URL final
+      const confirmRes = await fetch('/api/upload/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadUrl, pathname }),
+      });
+
+      const confirmData = await confirmRes.json();
+      if (!confirmData.success) {
+        throw new Error('Error al confirmar la subida');
+      }
+
+      const finalUrl = confirmData.data.url;
+
+      // Paso 4: Verificar con IA
       const verifyRes = await fetch('/api/verify-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: uploadData.data.url }),
+        body: JSON.stringify({ imageUrl: finalUrl }),
       });
 
       const verifyData = await verifyRes.json();
