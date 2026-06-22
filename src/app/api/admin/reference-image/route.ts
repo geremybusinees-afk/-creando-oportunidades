@@ -3,8 +3,9 @@ import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { put, del } from '@vercel/blob';
+import { issueSignedToken, presignUrl, del } from '@vercel/blob';
 
+// POST /api/admin/reference-image — Generar URL firmada para subir imagen directo a Blob
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -12,65 +13,64 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 403 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const body = await request.json();
+    const { filename, contentType, fileSize } = body;
 
-    if (!file) {
-      return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 });
+    if (!filename) {
+      return NextResponse.json({ success: false, error: 'Nombre de archivo requerido' }, { status: 400 });
     }
 
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    // Validar extensión
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const allowedExtensions = ['png', 'jpg', 'jpeg', 'webp'];
+    if (!ext || !allowedExtensions.includes(ext)) {
       return NextResponse.json(
         { success: false, error: 'Solo se permiten imágenes PNG, JPG o WebP' },
         { status: 400 }
       );
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    // Validar tamaño (10MB máximo)
+    if (fileSize && fileSize > 10 * 1024 * 1024) {
       return NextResponse.json(
         { success: false, error: 'La imagen debe ser menor a 10MB' },
         { status: 400 }
       );
     }
 
-    // Subir imagen de referencia a Vercel Blob
-    const blob = await put(`reference-images/${Date.now()}-${file.name}`, file, {
-      access: 'public',
-      addRandomSuffix: true,
+    const timestamp = Date.now();
+    const safeFileName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const pathname = `reference-images/${timestamp}-${safeFileName}`;
+
+    // Generar token firmado para subida
+    const signedToken = await issueSignedToken({
+      pathname,
+      operations: ['put'],
+      maximumSizeInBytes: Math.min(fileSize || 10 * 1024 * 1024, 10 * 1024 * 1024),
+      allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'],
     });
 
-    // Guardar URL en la tabla config
-    const [existing] = await getDb()
-      .select()
-      .from(config)
-      .where(eq(config.key, 'referenceImageUrl'))
-      .limit(1);
-
-    if (existing) {
-      await getDb()
-        .update(config)
-        .set({ value: blob.url, updatedAt: new Date() })
-        .where(eq(config.key, 'referenceImageUrl'));
-    } else {
-      await getDb()
-        .insert(config)
-        .values({ key: 'referenceImageUrl', value: blob.url });
-    }
+    // Generar URL presignada para PUT
+    const { presignedUrl: uploadUrl } = await presignUrl(signedToken, {
+      pathname,
+      operation: 'put',
+      access: 'public',
+    } as any);
 
     return NextResponse.json({
       success: true,
-      data: { url: blob.url },
+      data: { uploadUrl, pathname, signedToken },
     });
   } catch (error) {
-    console.error('Error uploading reference image:', error);
+    console.error('Error generating reference image upload URL:', error);
     return NextResponse.json(
-      { success: false, error: 'Error al subir la imagen de referencia' },
+      { success: false, error: 'Error al generar URL de subida. Verifica que BLOB_READ_WRITE_TOKEN esté configurado.' },
       { status: 500 }
     );
   }
 }
 
+// DELETE /api/admin/reference-image — Eliminar imagen de referencia
 export async function DELETE() {
   try {
     const session = await auth();
@@ -90,7 +90,6 @@ export async function DELETE() {
       try {
         await del(existing.value);
       } catch {
-        // Si falla la eliminación del blob, continuamos igual
         console.warn('No se pudo eliminar el blob, pero continuamos');
       }
 

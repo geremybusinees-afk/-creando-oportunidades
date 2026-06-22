@@ -93,23 +93,56 @@ export default function AdminPage() {
 
     setUploadingRef(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch('/api/admin/reference-image', {
+      // Paso 1: Obtener URL firmada para subida directa a Blob
+      const urlRes = await fetch('/api/admin/reference-image', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type,
+          fileSize: file.size,
+        }),
+      });
+      const urlData = await urlRes.json();
+
+      if (!urlData.success) {
+        alert(urlData.error || 'Error al generar URL de subida');
+        setUploadingRef(false);
+        return;
+      }
+
+      const { uploadUrl, pathname } = urlData.data;
+
+      // Paso 2: Subir archivo DIRECTAMENTE a Vercel Blob (sin pasar por el servidor)
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
       });
 
-      const data = await res.json();
-      if (data.success) {
-        setLocalConfig(prev => ({ ...prev, referenceImageUrl: data.data.url }));
-        setConfigData(prev => ({ ...prev, referenceImageUrl: data.data.url }));
-      } else {
-        alert(data.error || 'Error al subir la imagen');
+      if (!uploadRes.ok) {
+        alert('Error al subir la imagen al almacenamiento. Intenta de nuevo.');
+        setUploadingRef(false);
+        return;
       }
-    } catch {
+
+      // Paso 3: Confirmar subida y guardar URL en la base de datos
+      const confirmRes = await fetch('/api/admin/reference-image/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadUrl, pathname }),
+      });
+      const confirmData = await confirmRes.json();
+
+      if (confirmData.success) {
+        setLocalConfig(prev => ({ ...prev, referenceImageUrl: confirmData.data.url }));
+        setConfigData(prev => ({ ...prev, referenceImageUrl: confirmData.data.url }));
+      } else {
+        alert(confirmData.error || 'Error al guardar la imagen');
+      }
+    } catch (err) {
       alert('Error de conexión al subir la imagen');
+      console.error('Reference image upload error:', err);
     } finally {
       setUploadingRef(false);
     }
