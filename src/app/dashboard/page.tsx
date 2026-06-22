@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
   Lock, Unlock, UploadCloud, PlayCircle, CheckCircle2,
   Search, LogOut, Bell, Check, AlertCircle, ChevronRight, X, AlertTriangle, Film, MonitorPlay
 } from 'lucide-react';
+
+declare global {
+  interface Window { YT: any; onYouTubeIframeAPIReady: any; }
+}
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -28,8 +32,23 @@ export default function DashboardPage() {
   const [hasWatched2Min, setHasWatched2Min] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
+  const [isYoutubeReady, setIsYoutubeReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hasTrackedRef = useRef(false);
+  const youtubePlayerRef = useRef<any>(null);
+  const youtubeTrackingRef = useRef<any>(null);
+
+  // Cargar API de YouTube
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !window.YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode!.insertBefore(tag, firstScriptTag);
+      window.onYouTubeIframeAPIReady = () => setIsYoutubeReady(true);
+    } else if (window.YT) {
+      setIsYoutubeReady(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -48,6 +67,63 @@ export default function DashboardPage() {
       })
       .catch(() => {});
   }, [status, router]);
+
+  // Inicializar reproductor de YouTube
+  useEffect(() => {
+    const ytId = getYoutubeId(videoConfig?.videoUrl);
+    if (!ytId || !isYoutubeReady || youtubePlayerRef.current) return;
+
+    const playerDiv = document.getElementById('youtube-player');
+    if (!playerDiv) return;
+
+    youtubePlayerRef.current = new window.YT.Player('youtube-player', {
+      videoId: ytId,
+      width: '100%',
+      height: '100%',
+      playerVars: {
+        rel: 0,
+        modestbranding: 1,
+        controls: 1,
+      },
+      events: {
+        onReady: () => {
+          const dur = youtubePlayerRef.current.getDuration();
+          if (dur) setVideoDuration(dur);
+        },
+        onStateChange: (event: any) => {
+          if (event.data === window.YT.PlayerState.PLAYING) {
+            // Trackear progreso cada segundo mientras se reproduce
+            if (youtubeTrackingRef.current) clearInterval(youtubeTrackingRef.current);
+            youtubeTrackingRef.current = setInterval(() => {
+              try {
+                const ct = youtubePlayerRef.current?.getCurrentTime();
+                if (ct !== undefined) {
+                  setVideoProgress(Math.floor(ct));
+                }
+              } catch {}
+            }, 1000);
+          } else {
+            // Pausado o terminado, limpiar intervalo
+            if (youtubeTrackingRef.current) {
+              clearInterval(youtubeTrackingRef.current);
+              youtubeTrackingRef.current = null;
+            }
+            if (event.data === window.YT.PlayerState.ENDED) {
+              setVideoEnded(true);
+              try {
+                const dur = youtubePlayerRef.current?.getDuration();
+                if (dur) setVideoProgress(Math.ceil(dur));
+              } catch {}
+            }
+          }
+        },
+      },
+    });
+
+    return () => {
+      if (youtubeTrackingRef.current) clearInterval(youtubeTrackingRef.current);
+    };
+  }, [videoConfig?.videoUrl, isYoutubeReady]);
 
   if (status === 'loading') {
     return (
@@ -191,13 +267,11 @@ export default function DashboardPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Determinar si es un embed de YouTube
-  const getYouTubeEmbedUrl = (url: string) => {
+  // Obtener ID de YouTube
+  const getYoutubeId = (url?: string) => {
+    if (!url) return null;
     const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-    if (match) {
-      return `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1`;
-    }
-    return null;
+    return match ? match[1] : null;
   };
 
   return (
@@ -289,40 +363,21 @@ export default function DashboardPage() {
             <div className="pb-4">
               {videoConfig?.videoUrl ? (
                 <>
-                  {videoConfig.videoType === 'link' ? (
-                    /* Video desde enlace externo (YouTube, etc.) */
-                    <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
-                      {getYouTubeEmbedUrl(videoConfig.videoUrl) ? (
-                        <iframe
-                          src={getYouTubeEmbedUrl(videoConfig.videoUrl)!}
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      ) : (
-                        <video
-                          ref={videoRef}
-                          src={videoConfig.videoUrl}
-                          className="w-full h-full"
-                          controls
-                          onTimeUpdate={handleTimeUpdate}
-                          onLoadedMetadata={handleLoadedMetadata}
-                          onEnded={handleVideoEnded}
-                          playsInline
-                        />
-                      )}
-                      {/* Para YouTube, no podemos trackear el progreso fácilmente */}
-                      {getYouTubeEmbedUrl(videoConfig.videoUrl) && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                          <p className="text-xs text-white/70 text-center">
-                            Marca el video como visto manualmente al terminar
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* Video subido (MP4) */
-                    <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative group">
+                  {/* Reproductor universal: YouTube API o video nativo */}
+                  <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
+                    {getYoutubeId(videoConfig.videoUrl) ? (
+                      /* YouTube con API oficial para trackear progreso */
+                      <div id="youtube-player" className="w-full h-full" />
+                    ) : videoConfig.videoType === 'link' ? (
+                      /* Otro enlace externo (Vimeo, etc.) - usar iframe directo */
+                      <iframe
+                        src={videoConfig.videoUrl}
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : (
+                      /* Video subido (MP4) */
                       <video
                         ref={videoRef}
                         src={videoConfig.videoUrl}
@@ -333,45 +388,45 @@ export default function DashboardPage() {
                         onEnded={handleVideoEnded}
                         playsInline
                       />
+                    )}
 
-                      {/* Barra de progreso para los 2 minutos mínimos */}
-                      {!videoEnded && videoDuration > 0 && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3 pointer-events-none">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1">
-                              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-300 ${videoProgress >= 120 ? 'bg-emerald-400' : 'bg-amber-400'}`}
-                                  style={{ width: `${Math.min(100, (videoProgress / (videoDuration || 120)) * 100)}%` }}
-                                />
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {videoProgress >= 120 ? (
-                                <span className="text-emerald-400 text-xs font-bold flex items-center">
-                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Mínimo cumplido
-                                </span>
-                              ) : (
-                                <span className="text-amber-400 text-xs font-medium">
-                                  {formatTime(videoProgress)} / 2:00
-                                </span>
-                              )}
+                    {/* Barra de progreso overlay solo para MP4 */}
+                    {!getYoutubeId(videoConfig.videoUrl) && videoConfig.videoType !== 'link' && !videoEnded && videoDuration > 0 && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3 pointer-events-none">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${videoProgress >= 120 ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                                style={{ width: `${Math.min(100, (videoProgress / (videoDuration || 120)) * 100)}%` }}
+                              />
                             </div>
                           </div>
-                        </div>
-                      )}
-
-                      {/* Overlay cuando termina el video */}
-                      {videoEnded && (
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
-                            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-                            <span className="text-white font-bold text-lg">Video completo ✓</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {videoProgress >= 120 ? (
+                              <span className="text-emerald-400 text-xs font-bold flex items-center">
+                                <CheckCircle2 className="w-3 h-3 mr-1" /> Mínimo cumplido
+                              </span>
+                            ) : (
+                              <span className="text-amber-400 text-xs font-medium">
+                                {formatTime(videoProgress)} / 2:00
+                              </span>
+                            )}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+
+                    {/* Overlay cuando termina el video (MP4) */}
+                    {!getYoutubeId(videoConfig.videoUrl) && videoConfig.videoType !== 'link' && videoEnded && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                          <span className="text-white font-bold text-lg">Video completo ✓</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 /* Placeholder cuando no hay video configurado */
