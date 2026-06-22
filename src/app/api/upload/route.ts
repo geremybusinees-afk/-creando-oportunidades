@@ -17,23 +17,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 });
     }
 
-    const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
-    const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-    const isVideo = videoTypes.includes(file.type);
-    const isImage = imageTypes.includes(file.type);
-
-    if (!isImage && !isVideo) {
-      return NextResponse.json(
-        { success: false, error: 'Solo se permiten imágenes (PNG, JPG, WebP) o videos (MP4, WebM)' },
-        { status: 400 }
-      );
-    }
-
-    const maxSize = isVideo ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
+    // Aceptar cualquier tipo de archivo, límite de 50MB
+    const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
-      const sizeLabel = isVideo ? '200MB' : '10MB';
       return NextResponse.json(
-        { success: false, error: `El archivo debe ser menor a ${sizeLabel}` },
+        { success: false, error: 'El archivo debe ser menor a 50MB' },
         { status: 400 }
       );
     }
@@ -45,7 +33,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      data: { url: blob.url, type: isVideo ? 'video' : 'image' },
+      data: { url: blob.url, type: 'file' },
     });
   } catch (error) {
     console.error('Upload error:', error);
