@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [videoType, setVideoType] = useState('');
   const [videoEnded, setVideoEnded] = useState(false);
   const ytPlayerRef = useRef<any>(null);
+  const ytPlayerDivRef = useRef<HTMLDivElement>(null);
   const [bridgeStatus, setBridgeStatus] = useState<'pending' | 'verified' | 'rejected'>('pending');
   const [bridgeReason, setBridgeReason] = useState<string | null>(null);
   const [bridgeCheckedAt, setBridgeCheckedAt] = useState<Date | null>(null);
@@ -61,40 +62,80 @@ export default function DashboardPage() {
     const ytId = getYoutubeId(videoUrl);
     if (!ytId) return;
 
-    const initYTPlayer = () => {
-      if (ytPlayerRef.current) return;
-      ytPlayerRef.current = new (window as any).YT.Player('yt-player', {
-        videoId: ytId,
-        playerVars: {
-          controls: 0,
-          disablekb: 1,
-          modestbranding: 1,
-          rel: 0,
-          showinfo: 0,
-          iv_load_policy: 3,
-        },
-        events: {
-          onStateChange: (event: any) => {
-            if (event.data === 0) {
-              setVideoEnded(true);
-            }
+    // Esperar a que el div esté en el DOM
+    const checkDiv = setInterval(() => {
+      if (ytPlayerDivRef.current) {
+        clearInterval(checkDiv);
+        initYTPlayer(ytId);
+      }
+    }, 100);
+
+    const initYTPlayer = (videoId: string) => {
+      // Si ya existe un player, destruirlo primero
+      if (ytPlayerRef.current) {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch (e) {
+          // Ignorar errores al destruir
+        }
+        ytPlayerRef.current = null;
+      }
+
+      const createPlayer = () => {
+        if (!ytPlayerDivRef.current) return;
+        
+        ytPlayerRef.current = new (window as any).YT.Player(ytPlayerDivRef.current, {
+          videoId: videoId,
+          width: '100%',
+          height: '100%',
+          playerVars: {
+            controls: 0,
+            disablekb: 1,
+            modestbranding: 1,
+            rel: 0,
+            showinfo: 0,
+            iv_load_policy: 3,
+            fs: 0,
           },
-        },
-      });
+          events: {
+            onReady: () => {
+              console.log('YouTube player ready');
+            },
+            onStateChange: (event: any) => {
+              // Estado 0 = video terminó
+              if (event.data === 0) {
+                setVideoEnded(true);
+              }
+            },
+            onError: (event: any) => {
+              console.error('YouTube player error:', event.data);
+            },
+          },
+        });
+      };
+
+      if ((window as any).YT && (window as any).YT.Player) {
+        createPlayer();
+      } else {
+        // Cargar la API de YouTube
+        if (!(window as any).onYouTubeIframeAPIReady) {
+          const tag = document.createElement('script');
+          tag.src = 'https://www.youtube.com/iframe_api';
+          const firstScriptTag = document.getElementsByTagName('script')[0];
+          firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+        }
+        (window as any).onYouTubeIframeAPIReady = createPlayer;
+      }
     };
 
-    if ((window as any).YT && (window as any).YT.Player) {
-      initYTPlayer();
-    } else {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(tag);
-      (window as any).onYouTubeIframeAPIReady = initYTPlayer;
-    }
-
     return () => {
+      clearInterval(checkDiv);
       if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
-        ytPlayerRef.current.destroy();
+        try {
+          ytPlayerRef.current.destroy();
+        } catch (e) {
+          // Ignorar errores al destruir
+        }
         ytPlayerRef.current = null;
       }
     };
@@ -318,7 +359,7 @@ export default function DashboardPage() {
             <div className="px-10 pb-10">
               {videoUrl && videoType === 'youtube' && getYoutubeId(videoUrl) ? (
                 <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
-                  <div id="yt-player" className="w-full h-full" />
+                  <div ref={ytPlayerDivRef} className="w-full h-full" />
                   {videoEnded && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                       <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
