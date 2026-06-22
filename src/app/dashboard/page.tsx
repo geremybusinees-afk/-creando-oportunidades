@@ -5,7 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
   Lock, Unlock, UploadCloud, PlayCircle, CheckCircle2,
-  Search, LogOut, Bell, Check, AlertCircle, ChevronRight, X
+  Search, LogOut, Bell, Check, AlertCircle, ChevronRight, X, AlertTriangle, Film, MonitorPlay
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -20,10 +20,33 @@ export default function DashboardPage() {
   const [remainingAttempts, setRemainingAttempts] = useState(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Video state
+  const [videoConfig, setVideoConfig] = useState<{ videoUrl: string; videoType: string } | null>(null);
+  const [videoProgress, setVideoProgress] = useState(0); // segundos vistos
+  const [videoDuration, setVideoDuration] = useState(0); // duración total
+  const [videoEnded, setVideoEnded] = useState(false);
+  const [hasWatched2Min, setHasWatched2Min] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningMessage, setWarningMessage] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hasTrackedRef = useRef(false);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
     }
+    // Cargar configuración pública del video
+    fetch('/api/config/public')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setVideoConfig({
+            videoUrl: data.data.videoUrl || '',
+            videoType: data.data.videoType || 'link',
+          });
+        }
+      })
+      .catch(() => {});
   }, [status, router]);
 
   if (status === 'loading') {
@@ -121,9 +144,107 @@ export default function DashboardPage() {
     await signOut({ callbackUrl: '/' });
   };
 
+  // Manejo del progreso del video
+  const handleTimeUpdate = () => {
+    if (videoRef.current && !videoEnded) {
+      const currentTime = videoRef.current.currentTime;
+      setVideoProgress(currentTime);
+
+      if (currentTime >= 120 && !hasWatched2Min) {
+        setHasWatched2Min(true);
+      }
+    }
+  };
+
+  const handleVideoEnded = () => {
+    setVideoEnded(true);
+    setVideoProgress(videoDuration);
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setVideoDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleContinueClick = () => {
+    if (!videoConfig?.videoUrl) {
+      // No hay video configurado, permitir avanzar
+      setStep(2);
+      return;
+    }
+
+    if (!videoEnded) {
+      // Si no ha visto ni 2 minutos
+      if (videoProgress < 120) {
+        const faltante = Math.ceil(120 - videoProgress);
+        setWarningMessage(`⏳ Debes ver al menos 2 minutos del video para continuar.\n\nTe faltan ${faltante} segundo${faltante !== 1 ? 's' : ''}. ¡Mira el video completo!`);
+      } else {
+        setWarningMessage('🔒 Debes ver el video COMPLETO para poder continuar.\n\nNo puedes saltarte esta parte.');
+      }
+      setShowWarningModal(true);
+      return;
+    }
+
+    // Video visto completo, avanzar
+    setStep(2);
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Determinar si es un embed de YouTube
+  const getYouTubeEmbedUrl = (url: string) => {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1`;
+    }
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+      {/* Warning Modal */}
+      {showWarningModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 animate-fade-in-up border border-amber-200">
+            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle className="w-10 h-10 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-black text-slate-800 text-center mb-4">
+              {videoProgress < 120 ? 'Espera un momento...' : 'Video no completado'}
+            </h3>
+            <p className="text-slate-600 text-center text-base leading-relaxed whitespace-pre-line mb-8">
+              {warningMessage}
+            </p>
+            {videoProgress < 120 && (
+              <div className="mb-6">
+                <div className="flex justify-between text-xs text-slate-500 mb-2">
+                  <span>Tu progreso</span>
+                  <span>{formatTime(videoProgress)} / 2:00</span>
+                </div>
+                <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (videoProgress / 120) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setShowWarningModal(false)}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl transition-colors"
+            >
+              {videoEnded ? 'Continuar' : 'Seguir viendo el video'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-40">
         <div className="text-xl font-black text-slate-800 flex items-center">
           <div className="w-6 h-6 rounded bg-blue-600 text-white flex items-center justify-center text-xs mr-2">VA</div>
           Mastery
@@ -146,7 +267,7 @@ export default function DashboardPage() {
       <main className="max-w-4xl mx-auto p-6 py-10">
         <div className="mb-10">
           <div className="flex justify-between text-xs font-bold text-slate-400 mb-3 px-2">
-            <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Instrucciones</span>
+            <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Video</span>
             <span className={step >= 2 ? 'text-blue-600' : ''}>Paso 2: Activación</span>
             <span className={step >= 4 ? 'text-emerald-600' : ''}>Paso 3: Acceso Libre</span>
           </div>
@@ -169,25 +290,146 @@ export default function DashboardPage() {
                 Te explico exactamente cómo activar tu cuenta gratuita y descargar todo el material del curso sin pagar un centavo.
               </p>
             </div>
-            <div className="px-10 pb-10">
-              <div className="aspect-video bg-slate-900 rounded-2xl relative flex items-center justify-center group cursor-pointer overflow-hidden shadow-2xl">
-                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop')] bg-cover bg-center opacity-50 mix-blend-overlay group-hover:scale-105 transition-transform duration-700" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                <div className="w-24 h-24 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center group-hover:bg-blue-600 transition-all duration-300 shadow-[0_0_50px_rgba(37,99,235,0.5)] z-10 border border-white/20">
-                  <PlayCircle className="w-12 h-12 text-white ml-2" />
+
+            <div className="px-10 pb-6">
+              {videoConfig?.videoUrl ? (
+                <>
+                  {videoConfig.videoType === 'link' ? (
+                    /* Video desde enlace externo (YouTube, etc.) */
+                    <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
+                      {getYouTubeEmbedUrl(videoConfig.videoUrl) ? (
+                        <iframe
+                          src={getYouTubeEmbedUrl(videoConfig.videoUrl)!}
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video
+                          ref={videoRef}
+                          src={videoConfig.videoUrl}
+                          className="w-full h-full"
+                          controls
+                          onTimeUpdate={handleTimeUpdate}
+                          onLoadedMetadata={handleLoadedMetadata}
+                          onEnded={handleVideoEnded}
+                          playsInline
+                        />
+                      )}
+                      {/* Para YouTube, no podemos trackear el progreso fácilmente */}
+                      {getYouTubeEmbedUrl(videoConfig.videoUrl) && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                          <p className="text-xs text-white/70 text-center">
+                            Marca el video como visto manualmente al terminar
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Video subido (MP4) */
+                    <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative group">
+                      <video
+                        ref={videoRef}
+                        src={videoConfig.videoUrl}
+                        className="w-full h-full object-contain bg-black"
+                        controls
+                        onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onEnded={handleVideoEnded}
+                        playsInline
+                      />
+
+                      {/* Barra de progreso para los 2 minutos mínimos */}
+                      {!videoEnded && videoDuration > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3 pointer-events-none">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-300 ${videoProgress >= 120 ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                                  style={{ width: `${Math.min(100, (videoProgress / (videoDuration || 120)) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {videoProgress >= 120 ? (
+                                <span className="text-emerald-400 text-xs font-bold flex items-center">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Mínimo cumplido
+                                </span>
+                              ) : (
+                                <span className="text-amber-400 text-xs font-medium">
+                                  {formatTime(videoProgress)} / 2:00
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Overlay cuando termina el video */}
+                      {videoEnded && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
+                            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                            <span className="text-white font-bold text-lg">Video completo ✓</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Placeholder cuando no hay video configurado */
+                <div className="aspect-video bg-slate-900 rounded-2xl relative flex items-center justify-center group cursor-pointer overflow-hidden shadow-2xl">
+                  <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop')] bg-cover bg-center opacity-50 mix-blend-overlay group-hover:scale-105 transition-transform duration-700" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                    <Film className="w-16 h-16 text-white/50 mb-3" />
+                    <p className="text-white/60 text-sm font-medium">No hay video configurado</p>
+                  </div>
                 </div>
-                <div className="absolute bottom-6 left-6 right-6 flex justify-between items-center z-10">
-                  <span className="text-white font-medium drop-shadow-md">Guía de Activación - VA Mastery</span>
-                  <span className="bg-black/60 backdrop-blur text-white text-xs px-2 py-1 rounded">04:15</span>
+              )}
+            </div>
+
+            {/* Indicador de progreso */}
+            {videoConfig?.videoUrl && videoDuration > 0 && (
+              <div className="px-10 pb-2">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <MonitorPlay className="w-4 h-4 text-slate-400" />
+                      <span className="text-slate-600">Progreso del video</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {videoEnded ? (
+                        <span className="text-emerald-600 font-bold flex items-center">
+                          <CheckCircle2 className="w-4 h-4 mr-1" /> Completado
+                        </span>
+                      ) : videoProgress >= 120 ? (
+                        <span className="text-amber-600 font-medium">Mínimo cumplido - Termina el video</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">{formatTime(videoProgress)} / 2:00 mínimo</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="h-2 bg-slate-200 rounded-full mt-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        videoEnded ? 'bg-emerald-400' : videoProgress >= 120 ? 'bg-amber-400' : 'bg-blue-400'
+                      }`}
+                      style={{ width: `${videoDuration > 0 ? (videoProgress / videoDuration) * 100 : 0}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
             <div className="p-8 bg-slate-50 border-t border-slate-100 text-center">
               <button
-                onClick={() => setStep(2)}
+                onClick={handleContinueClick}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-12 rounded-xl text-lg shadow-xl shadow-blue-600/20 transition-all transform hover:-translate-y-1 w-full md:w-auto"
               >
-                Ya vi el video, Continuar al Paso 2
+                Continuar al Paso 2
               </button>
             </div>
           </div>

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Settings, Users, TrendingUp, Edit3, LogOut, Search,
   CheckCircle2, AlertCircle, MonitorPlay, Upload,
-  Image as ImageIcon, Trash2, Loader2
+  Image as ImageIcon, Trash2, Loader2, Video, Link, Film
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -17,6 +17,8 @@ export default function AdminPage() {
   const [configData, setConfigData] = useState<Record<string, string>>({});
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [uploadingRef, setUploadingRef] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoLink, setVideoLink] = useState('');
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -132,6 +134,94 @@ export default function AdminPage() {
     }
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const videoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+    if (!videoTypes.includes(file.type)) {
+      alert('Solo se permiten archivos MP4, WebM, OGG o MOV');
+      return;
+    }
+
+    if (file.size > 500 * 1024 * 1024) {
+      alert('El video debe ser menor a 500MB');
+      return;
+    }
+
+    setUploadingVideo(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/admin/video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setLocalConfig(prev => ({ ...prev, videoUrl: data.data.url, videoType: 'upload' }));
+        setConfigData(prev => ({ ...prev, videoUrl: data.data.url, videoType: 'upload' }));
+        setVideoLink('');
+      } else {
+        alert(data.error || 'Error al subir el video');
+      }
+    } catch {
+      alert('Error de conexión al subir el video');
+    } finally {
+      setUploadingVideo(false);
+    }
+  };
+
+  const handleVideoLinkSave = async () => {
+    if (!videoLink.trim()) {
+      alert('Ingresa una URL de video');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/video', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: videoLink.trim() }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setLocalConfig(prev => ({ ...prev, videoUrl: videoLink.trim(), videoType: 'link' }));
+        setConfigData(prev => ({ ...prev, videoUrl: videoLink.trim(), videoType: 'link' }));
+        setVideoLink('');
+        alert('Enlace de video guardado');
+      } else {
+        alert(data.error || 'Error al guardar el enlace');
+      }
+    } catch {
+      alert('Error de conexión');
+    }
+  };
+
+  const handleRemoveVideo = async () => {
+    if (!confirm('¿Eliminar el video?')) return;
+
+    try {
+      const res = await fetch('/api/admin/video', { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        const newConfig = { ...localConfig };
+        delete newConfig.videoUrl;
+        delete newConfig.videoType;
+        setLocalConfig(newConfig);
+        const newConfigData = { ...configData };
+        delete newConfigData.videoUrl;
+        delete newConfigData.videoType;
+        setConfigData(newConfigData);
+      }
+    } catch {
+      alert('Error al eliminar el video');
+    }
+  };
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -168,6 +258,9 @@ export default function AdminPage() {
           <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-colors ${activeTab === 'settings' ? 'bg-indigo-600 text-white font-medium shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
             <Edit3 className="w-5 h-5 mr-3" /> Constructor CPA
           </button>
+          <button onClick={() => setActiveTab('video')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-colors ${activeTab === 'video' ? 'bg-indigo-600 text-white font-medium shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+            <Video className="w-5 h-5 mr-3" /> Video Landing
+          </button>
         </nav>
         <div className="p-6 border-t border-slate-800 flex items-center text-sm">
           <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div>
@@ -181,6 +274,7 @@ export default function AdminPage() {
             {activeTab === 'dashboard' && 'Rendimiento del Embudo'}
             {activeTab === 'users' && 'Gestión de Leads Registrados'}
             {activeTab === 'settings' && 'Configuración de Oferta'}
+            {activeTab === 'video' && 'Video de la Landing Page'}
           </h1>
           <div className="flex items-center">
             <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 uppercase tracking-wider">
@@ -444,6 +538,189 @@ export default function AdminPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+          {activeTab === 'video' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+              <div className="space-y-8 max-w-3xl">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                    <span className="w-8 h-8 rounded bg-rose-100 text-rose-600 flex items-center justify-center mr-3"><Film className="w-4 h-4" /></span>
+                    Video Principal del Dashboard
+                  </h3>
+                  <p className="text-sm text-slate-500 mb-6 pl-11">
+                    Este video aparecerá en el <strong>Paso 1 del Dashboard</strong> (después del registro).
+                    Los usuarios deberán verlo completo antes de poder continuar con la activación.
+                  </p>
+                </div>
+
+                <div className="h-px w-full bg-slate-100" />
+
+                {/* Opción 1: Enlace externo */}
+                <div>
+                  <h4 className="text-md font-bold text-slate-700 mb-3 flex items-center">
+                    <Link className="w-4 h-4 mr-2 text-blue-500" />
+                    Opción 1: Enlace de video (YouTube, Vimeo, etc.)
+                  </h4>
+                  <div className="pl-7 space-y-4">
+                    <div className="flex gap-3">
+                      <input
+                        type="url"
+                        value={videoLink}
+                        onChange={e => setVideoLink(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className="flex-1 border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-mono"
+                      />
+                      <button
+                        onClick={handleVideoLinkSave}
+                        disabled={!videoLink.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl transition-colors whitespace-nowrap"
+                      >
+                        Guardar Enlace
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500">Soporta YouTube, Vimeo, Dailymotion y cualquier URL de video directo.</p>
+                  </div>
+                </div>
+
+                <div className="h-px w-full bg-slate-100" />
+
+                {/* Opción 2: Subir MP4 */}
+                <div>
+                  <h4 className="text-md font-bold text-slate-700 mb-3 flex items-center">
+                    <Upload className="w-4 h-4 mr-2 text-emerald-500" />
+                    Opción 2: Subir archivo MP4
+                  </h4>
+                  <div className="pl-7 space-y-5">
+                    <p className="text-sm text-slate-500">
+                      Sube tu video directamente. Soporta videos de <strong>más de 3 minutos</strong> y hasta <strong>500MB</strong>.
+                    </p>
+
+                    {localConfig.videoType === 'upload' && localConfig.videoUrl ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                        <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-black max-w-lg mx-auto">
+                          <video
+                            src={localConfig.videoUrl}
+                            controls
+                            className="w-full h-auto max-h-[250px]"
+                          />
+                        </div>
+                        <div className="text-center text-xs text-slate-500 truncate max-w-full px-2">
+                          {localConfig.videoUrl}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex-1 cursor-pointer">
+                            <input
+                              type="file"
+                              accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                              onChange={handleVideoUpload}
+                              className="hidden"
+                              disabled={uploadingVideo}
+                            />
+                            <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">
+                              {uploadingVideo ? (
+                                <><Loader2 className="w-4 h-4 animate-spin" /> Subiendo...</>
+                              ) : (
+                                <><Upload className="w-4 h-4" /> Reemplazar Video</>
+                              )}
+                            </div>
+                          </label>
+                          <button
+                            onClick={handleRemoveVideo}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 border border-rose-200 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" /> Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ) : localConfig.videoType === 'link' && localConfig.videoUrl ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                        <div className="text-center text-sm text-blue-600 font-medium truncate max-w-full px-2">
+                          <Link className="w-4 h-4 inline mr-1" />
+                          {localConfig.videoUrl}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => {
+                              setVideoLink(localConfig.videoUrl || '');
+                            }}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            <Edit3 className="w-4 h-4" /> Cambiar Enlace
+                          </button>
+                          <button
+                            onClick={handleRemoveVideo}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 border border-rose-200 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" /> Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block">
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                          onChange={handleVideoUpload}
+                          className="hidden"
+                          disabled={uploadingVideo}
+                        />
+                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition-colors">
+                          {uploadingVideo ? (
+                            <div className="flex flex-col items-center">
+                              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
+                              <p className="text-sm font-medium text-slate-600">Subiendo video...</p>
+                              <p className="text-xs text-slate-400 mt-1">Esto puede tomar unos momentos</p>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <Film className="w-10 h-10 text-slate-400 mb-3" />
+                              <p className="text-sm font-semibold text-slate-700 mb-1">
+                                Haz clic para subir un archivo de video
+                              </p>
+                              <p className="text-xs text-slate-500">MP4, WebM, OGG o MOV • Máximo 500MB</p>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <div className="h-px w-full bg-slate-100" />
+
+                {/* Vista previa de cómo se verá */}
+                {localConfig.videoUrl && (
+                  <div>
+                    <h4 className="text-md font-bold text-slate-700 mb-3 flex items-center">
+                      <MonitorPlay className="w-4 h-4 mr-2 text-indigo-500" />
+                      Vista Previa en Dashboard
+                    </h4>
+                    <div className="pl-7">
+                      <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-200 shadow-lg max-w-2xl">
+                        {localConfig.videoType === 'link' ? (
+                          <div className="aspect-video flex items-center justify-center bg-slate-800">
+                            <div className="text-center p-8">
+                              <Link className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                              <p className="text-slate-400 text-sm font-medium">Video desde enlace externo</p>
+                              <p className="text-xs text-slate-600 mt-1 break-all">{localConfig.videoUrl}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <video
+                            src={localConfig.videoUrl}
+                            controls
+                            className="w-full aspect-video"
+                          />
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Así verán el video los usuarios en el Dashboard. Deberán verlo completo para continuar.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
