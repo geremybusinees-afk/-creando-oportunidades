@@ -16,9 +16,9 @@ export default function AdminPage() {
   const [userList, setUserList] = useState<any[]>([]);
   const [configData, setConfigData] = useState<Record<string, string>>({});
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
-  const [uploadingRef, setUploadingRef] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoLink, setVideoLink] = useState('');
+  const [refImageLink, setRefImageLink] = useState('');
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -76,75 +76,35 @@ export default function AdminPage() {
     }
   };
 
-  const handleReferenceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      alert('Solo se permiten imágenes PNG, JPG o WebP');
+  const handleReferenceImageUrlSave = async () => {
+    const url = refImageLink.trim();
+    if (!url) {
+      alert('Ingresa una URL de imagen');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert('La imagen debe ser menor a 10MB');
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      alert('La URL debe comenzar con http:// o https://');
       return;
     }
 
-    setUploadingRef(true);
     try {
-      // Paso 1: Obtener URL firmada para subida directa a Blob
-      const urlRes = await fetch('/api/admin/reference-image', {
+      const res = await fetch('/api/admin/reference-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          fileSize: file.size,
-        }),
-      });
-      const urlData = await urlRes.json();
-
-      if (!urlData.success) {
-        alert(urlData.error || 'Error al generar URL de subida');
-        setUploadingRef(false);
-        return;
-      }
-
-      const { uploadUrl, pathname } = urlData.data;
-
-      // Paso 2: Subir archivo DIRECTAMENTE a Vercel Blob (sin pasar por el servidor)
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
+        body: JSON.stringify({ url }),
       });
 
-      if (!uploadRes.ok) {
-        alert('Error al subir la imagen al almacenamiento. Intenta de nuevo.');
-        setUploadingRef(false);
-        return;
-      }
-
-      // Paso 3: Confirmar subida y guardar URL en la base de datos
-      const confirmRes = await fetch('/api/admin/reference-image/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadUrl, pathname }),
-      });
-      const confirmData = await confirmRes.json();
-
-      if (confirmData.success) {
-        setLocalConfig(prev => ({ ...prev, referenceImageUrl: confirmData.data.url }));
-        setConfigData(prev => ({ ...prev, referenceImageUrl: confirmData.data.url }));
+      const data = await res.json();
+      if (data.success) {
+        setLocalConfig(prev => ({ ...prev, referenceImageUrl: url }));
+        setConfigData(prev => ({ ...prev, referenceImageUrl: url }));
+        setRefImageLink('');
       } else {
-        alert(confirmData.error || 'Error al guardar la imagen');
+        alert(data.error || 'Error al guardar la imagen de referencia');
       }
-    } catch (err) {
-      alert('Error de conexión al subir la imagen');
-      console.error('Reference image upload error:', err);
-    } finally {
-      setUploadingRef(false);
+    } catch {
+      alert('Error de conexión');
     }
   };
 
@@ -533,11 +493,28 @@ export default function AdminPage() {
                   </h3>
                   <div className="pl-11 space-y-5">
                     <p className="text-sm text-slate-500">
-                      Sube una captura de pantalla de <strong>cómo se ve un registro exitoso</strong> en la plataforma externa.
+                      Pega el enlace de una captura de pantalla de <strong>cómo se ve un registro exitoso</strong> en la plataforma externa.
                       Cuando los usuarios suban su comprobante, la IA lo comparará con esta imagen de referencia para verificar que sea similar.
                     </p>
 
-                    {localConfig.referenceImageUrl ? (
+                    <div className="flex gap-3">
+                      <input
+                        type="url"
+                        value={refImageLink}
+                        onChange={e => setRefImageLink(e.target.value)}
+                        placeholder="https://ejemplo.com/mi-imagen-de-referencia.png"
+                        className="flex-1 border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-mono"
+                      />
+                      <button
+                        onClick={handleReferenceImageUrlSave}
+                        disabled={!refImageLink.trim()}
+                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl transition-colors whitespace-nowrap"
+                      >
+                        Guardar
+                      </button>
+                    </div>
+
+                    {localConfig.referenceImageUrl && (
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                         <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-white max-w-md mx-auto">
                           <img
@@ -546,23 +523,13 @@ export default function AdminPage() {
                             className="w-full h-auto object-contain max-h-[300px]"
                           />
                         </div>
-                        <div className="flex items-center gap-3">
-                          <label className="flex-1 cursor-pointer">
-                            <input
-                              type="file"
-                              accept="image/png,image/jpeg,image/webp"
-                              onChange={handleReferenceImageUpload}
-                              className="hidden"
-                              disabled={uploadingRef}
-                            />
-                            <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">
-                              {uploadingRef ? (
-                                <><Loader2 className="w-4 h-4 animate-spin" /> Subiendo...</>
-                              ) : (
-                                <><Upload className="w-4 h-4" /> Reemplazar Imagen</>
-                              )}
-                            </div>
-                          </label>
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            onClick={() => setRefImageLink(localConfig.referenceImageUrl || '')}
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            Cambiar Enlace
+                          </button>
                           <button
                             onClick={handleRemoveReferenceImage}
                             className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 border border-rose-200 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
@@ -571,30 +538,6 @@ export default function AdminPage() {
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <label className="cursor-pointer block">
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          onChange={handleReferenceImageUpload}
-                          className="hidden"
-                          disabled={uploadingRef}
-                        />
-                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition-colors">
-                          {uploadingRef ? (
-                            <div className="flex flex-col items-center">
-                              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
-                              <p className="text-sm font-medium text-slate-600">Subiendo imagen...</p>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center">
-                              <Upload className="w-10 h-10 text-slate-400 mb-3" />
-                              <p className="text-sm font-semibold text-slate-700 mb-1">Haz clic para subir la imagen de referencia</p>
-                              <p className="text-xs text-slate-500">PNG, JPG o WebP • Máximo 10MB</p>
-                            </div>
-                          )}
-                        </div>
-                      </label>
                     )}
                   </div>
                 </div>

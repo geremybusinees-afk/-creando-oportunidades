@@ -3,9 +3,8 @@ import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { issueSignedToken, presignUrl, del } from '@vercel/blob';
 
-// POST /api/admin/reference-image — Generar URL firmada para subir imagen directo a Blob
+// POST /api/admin/reference-image — Guardar URL de imagen de referencia
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -14,57 +13,42 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { filename, contentType, fileSize } = body;
+    const { url } = body;
 
-    if (!filename) {
-      return NextResponse.json({ success: false, error: 'Nombre de archivo requerido' }, { status: 400 });
+    if (!url || typeof url !== 'string') {
+      return NextResponse.json({ success: false, error: 'URL de imagen requerida' }, { status: 400 });
     }
 
-    // Validar extensión
-    const ext = filename.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['png', 'jpg', 'jpeg', 'webp'];
-    if (!ext || !allowedExtensions.includes(ext)) {
-      return NextResponse.json(
-        { success: false, error: 'Solo se permiten imágenes PNG, JPG o WebP' },
-        { status: 400 }
-      );
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return NextResponse.json({ success: false, error: 'La URL debe comenzar con http:// o https://' }, { status: 400 });
     }
 
-    // Validar tamaño (10MB máximo)
-    if (fileSize && fileSize > 10 * 1024 * 1024) {
-      return NextResponse.json(
-        { success: false, error: 'La imagen debe ser menor a 10MB' },
-        { status: 400 }
-      );
+    // Guardar URL en la tabla config
+    const [existing] = await getDb()
+      .select()
+      .from(config)
+      .where(eq(config.key, 'referenceImageUrl'))
+      .limit(1);
+
+    if (existing) {
+      await getDb()
+        .update(config)
+        .set({ value: url, updatedAt: new Date() })
+        .where(eq(config.key, 'referenceImageUrl'));
+    } else {
+      await getDb()
+        .insert(config)
+        .values({ key: 'referenceImageUrl', value: url });
     }
-
-    const timestamp = Date.now();
-    const safeFileName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const pathname = `reference-images/${timestamp}-${safeFileName}`;
-
-    // Generar token firmado para subida
-    const signedToken = await issueSignedToken({
-      pathname,
-      operations: ['put'],
-      maximumSizeInBytes: Math.min(fileSize || 10 * 1024 * 1024, 10 * 1024 * 1024),
-      allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'],
-    });
-
-    // Generar URL presignada para PUT
-    const { presignedUrl: uploadUrl } = await presignUrl(signedToken, {
-      pathname,
-      operation: 'put',
-      access: 'public',
-    } as any);
 
     return NextResponse.json({
       success: true,
-      data: { uploadUrl, pathname, signedToken },
+      data: { url },
     });
   } catch (error) {
-    console.error('Error generating reference image upload URL:', error);
+    console.error('Error saving reference image URL:', error);
     return NextResponse.json(
-      { success: false, error: 'Error al generar URL de subida. Verifica que BLOB_READ_WRITE_TOKEN esté configurado.' },
+      { success: false, error: 'Error al guardar la URL de la imagen de referencia' },
       { status: 500 }
     );
   }
@@ -78,7 +62,6 @@ export async function DELETE() {
       return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 403 });
     }
 
-    // Obtener URL actual de la imagen de referencia
     const [existing] = await getDb()
       .select()
       .from(config)
@@ -86,14 +69,6 @@ export async function DELETE() {
       .limit(1);
 
     if (existing?.value) {
-      // Intentar eliminar de Vercel Blob
-      try {
-        await del(existing.value);
-      } catch {
-        console.warn('No se pudo eliminar el blob, pero continuamos');
-      }
-
-      // Eliminar de la BD
       await getDb()
         .delete(config)
         .where(eq(config.key, 'referenceImageUrl'));
