@@ -174,19 +174,14 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!videoEnded) {
-      // Si no ha visto ni 2 minutos
-      if (videoProgress < 120) {
-        const faltante = Math.ceil(120 - videoProgress);
-        setWarningMessage(`⏳ Debes ver al menos 2 minutos del video para continuar.\n\nTe faltan ${faltante} segundo${faltante !== 1 ? 's' : ''}. ¡Mira el video completo!`);
-      } else {
-        setWarningMessage('🔒 Debes ver el video COMPLETO para poder continuar.\n\nNo puedes saltarte esta parte.');
-      }
+    if (videoProgress < 120) {
+      const faltante = Math.ceil(120 - videoProgress);
+      setWarningMessage(`⏳ Debes ver al menos 2 minutos del video para continuar.\n\nTe faltan ${faltante} segundo${faltante !== 1 ? 's' : ''}.`);
       setShowWarningModal(true);
       return;
     }
 
-    // Video visto completo, avanzar
+    // Vio al menos 120 segundos, puede avanzar
     setStep(2);
   };
 
@@ -215,7 +210,7 @@ export default function DashboardPage() {
               <AlertTriangle className="w-10 h-10 text-amber-600" />
             </div>
             <h3 className="text-xl font-black text-slate-800 text-center mb-4">
-              {videoProgress < 120 ? 'Espera un momento...' : 'Video no completado'}
+              {videoProgress < 120 ? 'Espera un momento...' : ''}
             </h3>
             <p className="text-slate-600 text-center text-base leading-relaxed whitespace-pre-line mb-8">
               {warningMessage}
@@ -238,7 +233,7 @@ export default function DashboardPage() {
               onClick={() => setShowWarningModal(false)}
               className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl transition-colors"
             >
-              {videoEnded ? 'Continuar' : 'Seguir viendo el video'}
+              Seguir viendo el video
             </button>
           </div>
         </div>
@@ -264,7 +259,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 py-10">
+      <main className="max-w-6xl mx-auto p-6 py-10">
         <div className="mb-10">
           <div className="flex justify-between text-xs font-bold text-slate-400 mb-3 px-2">
             <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Video</span>
@@ -281,17 +276,17 @@ export default function DashboardPage() {
 
         {step === 1 && (
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in-up">
-            <div className="p-10 text-center">
-              <span className="inline-block px-3 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
+            <div className="p-6 md:p-8 text-center">
+              <span className="inline-block px-3 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-full mb-3 uppercase tracking-wider">
                 Acción Requerida
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold mb-4 text-slate-800">Mira este video para continuar</h2>
-              <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-extrabold mb-2 text-slate-800">Mira este video para continuar</h2>
+              <p className="text-slate-500 text-base max-w-2xl mx-auto">
                 Te explico exactamente cómo activar tu cuenta gratuita y descargar todo el material del curso sin pagar un centavo.
               </p>
             </div>
 
-            <div className="px-10 pb-6">
+            <div className="pb-4">
               {videoConfig?.videoUrl ? (
                 <>
                   {videoConfig.videoType === 'link' ? (
@@ -393,7 +388,7 @@ export default function DashboardPage() {
 
             {/* Indicador de progreso */}
             {videoConfig?.videoUrl && videoDuration > 0 && (
-              <div className="px-10 pb-2">
+              <div className="px-4 md:px-6 pb-2">
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
@@ -401,12 +396,10 @@ export default function DashboardPage() {
                       <span className="text-slate-600">Progreso del video</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {videoEnded ? (
+                      {videoProgress >= 120 ? (
                         <span className="text-emerald-600 font-bold flex items-center">
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> Completado
+                          <CheckCircle2 className="w-4 h-4 mr-1" /> Mínimo cumplido ✓
                         </span>
-                      ) : videoProgress >= 120 ? (
-                        <span className="text-amber-600 font-medium">Mínimo cumplido - Termina el video</span>
                       ) : (
                         <span className="text-amber-600 font-medium">{formatTime(videoProgress)} / 2:00 mínimo</span>
                       )}
@@ -415,7 +408,7 @@ export default function DashboardPage() {
                   <div className="h-2 bg-slate-200 rounded-full mt-2 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${
-                        videoEnded ? 'bg-emerald-400' : videoProgress >= 120 ? 'bg-amber-400' : 'bg-blue-400'
+                        videoProgress >= 120 ? 'bg-emerald-400' : 'bg-blue-400'
                       }`}
                       style={{ width: `${videoDuration > 0 ? (videoProgress / videoDuration) * 100 : 0}%` }}
                     />
