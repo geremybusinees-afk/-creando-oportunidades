@@ -3,8 +3,9 @@ import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { put, del } from '@vercel/blob';
+import { issueSignedToken, presignUrl, del } from '@vercel/blob';
 
+// POST /api/admin/video — Generar URL firmada para subir video directo a Blob
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -12,95 +13,68 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 403 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const body = await request.json();
+    const { filename, contentType, fileSize } = body;
 
-    if (!file) {
-      return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 });
+    if (!filename) {
+      return NextResponse.json({ success: false, error: 'Nombre de archivo requerido' }, { status: 400 });
     }
 
-    // Validar tipo de archivo
-    const videoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
-    if (!videoTypes.includes(file.type)) {
+    // Validar extensión
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const allowedExtensions = ['mp4', 'webm', 'ogg', 'mov'];
+    if (!ext || !allowedExtensions.includes(ext)) {
       return NextResponse.json(
-        { success: false, error: 'Solo se permiten archivos de video (MP4, WebM, OGG, MOV)' },
+        { success: false, error: 'Solo se permiten archivos MP4, WebM, OGG o MOV' },
         { status: 400 }
       );
     }
 
-    // Límite de 500MB para videos
-    const maxSize = 500 * 1024 * 1024;
-    if (file.size > maxSize) {
+    // Validar tamaño (500MB máximo)
+    if (fileSize && fileSize > 500 * 1024 * 1024) {
       return NextResponse.json(
         { success: false, error: 'El video debe ser menor a 500MB' },
         { status: 400 }
       );
     }
 
-    // Subir video a Vercel Blob
-    const blob = await put(`videos/${Date.now()}-${file.name}`, file, {
-      access: 'public',
-      addRandomSuffix: true,
+    const timestamp = Date.now();
+    const safeFileName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const pathname = `videos/${timestamp}-${safeFileName}`;
+
+    // Generar token firmado para subida
+    const signedToken = await issueSignedToken({
+      pathname,
+      operations: ['put'],
+      maximumSizeInBytes: Math.min(fileSize || 500 * 1024 * 1024, 500 * 1024 * 1024),
+      allowedContentTypes: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
     });
 
-    // Guardar URL en la tabla config
-    const [existing] = await getDb()
-      .select()
-      .from(config)
-      .where(eq(config.key, 'videoUrl'))
-      .limit(1);
-
-    if (existing) {
-      // Eliminar video anterior de Blob si existe
-      const [oldConfig] = await getDb()
-        .select()
-        .from(config)
-        .where(eq(config.key, 'videoUrl'))
-        .limit(1);
-      if (oldConfig?.value && oldConfig.value.startsWith('https://')) {
-        try { await del(oldConfig.value); } catch { /* ignore */ }
-      }
-
-      await getDb()
-        .update(config)
-        .set({ value: blob.url, updatedAt: new Date() })
-        .where(eq(config.key, 'videoUrl'));
-    } else {
-      await getDb()
-        .insert(config)
-        .values({ key: 'videoUrl', value: blob.url });
-    }
-
-    // Guardar el tipo como 'upload'
-    const [existingType] = await getDb()
-      .select()
-      .from(config)
-      .where(eq(config.key, 'videoType'))
-      .limit(1);
-    if (existingType) {
-      await getDb()
-        .update(config)
-        .set({ value: 'upload', updatedAt: new Date() })
-        .where(eq(config.key, 'videoType'));
-    } else {
-      await getDb()
-        .insert(config)
-        .values({ key: 'videoType', value: 'upload' });
-    }
+    // Generar URL presignada para PUT
+    const { presignedUrl: uploadUrl } = await presignUrl(signedToken, {
+      pathname,
+      operation: 'put',
+      access: 'public',
+    } as any);
 
     return NextResponse.json({
       success: true,
-      data: { url: blob.url, type: 'upload' },
+      data: {
+        uploadUrl,
+        pathname,
+        signedToken,
+      },
     });
   } catch (error) {
-    console.error('Error uploading video:', error);
+    console.error('Error generating upload URL:', error);
     return NextResponse.json(
-      { success: false, error: 'Error al subir el video' },
+      { success: false, error: 'Error al generar URL de subida' },
       { status: 500 }
     );
   }
 }
 
+// PUT /api/admin/video — Guardar enlace externo (YouTube, Vimeo, etc.)
 export async function PUT(request: Request) {
   try {
     const session = await auth();
@@ -160,6 +134,7 @@ export async function PUT(request: Request) {
   }
 }
 
+// DELETE /api/admin/video — Eliminar video
 export async function DELETE() {
   try {
     const session = await auth();
@@ -167,7 +142,6 @@ export async function DELETE() {
       return NextResponse.json({ success: false, error: 'No autorizado' }, { status: 403 });
     }
 
-    // Obtener URL actual del video
     const [existing] = await getDb()
       .select()
       .from(config)
@@ -175,8 +149,7 @@ export async function DELETE() {
       .limit(1);
 
     if (existing?.value) {
-      // Intentar eliminar de Vercel Blob si es una subida
-      if (existing.value.includes('blob.vercel-storage.com') || existing.value.includes('public.blob.vercel-storage.com')) {
+      if (existing.value.includes('blob.vercel-storage.com')) {
         try { await del(existing.value); } catch { /* ignore */ }
       }
 
@@ -185,7 +158,6 @@ export async function DELETE() {
         .where(eq(config.key, 'videoUrl'));
     }
 
-    // Limpiar también el tipo
     const [existingType] = await getDb()
       .select()
       .from(config)

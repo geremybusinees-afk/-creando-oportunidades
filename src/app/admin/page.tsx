@@ -151,24 +151,58 @@ export default function AdminPage() {
 
     setUploadingVideo(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch('/api/admin/video', {
+      // Paso 1: Obtener URL firmada para subida directa a Blob
+      const urlRes = await fetch('/api/admin/video', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type,
+          fileSize: file.size,
+        }),
+      });
+      const urlData = await urlRes.json();
+
+      if (!urlData.success) {
+        alert(urlData.error || 'Error al generar URL de subida');
+        setUploadingVideo(false);
+        return;
+      }
+
+      const { uploadUrl, pathname } = urlData.data;
+
+      // Paso 2: Subir archivo DIRECTAMENTE a Vercel Blob (sin pasar por el servidor)
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
       });
 
-      const data = await res.json();
-      if (data.success) {
-        setLocalConfig(prev => ({ ...prev, videoUrl: data.data.url, videoType: 'upload' }));
-        setConfigData(prev => ({ ...prev, videoUrl: data.data.url, videoType: 'upload' }));
-        setVideoLink('');
-      } else {
-        alert(data.error || 'Error al subir el video');
+      if (!uploadRes.ok) {
+        alert('Error al subir el video al almacenamiento. Intenta de nuevo.');
+        setUploadingVideo(false);
+        return;
       }
-    } catch {
+
+      // Paso 3: Confirmar subida y guardar URL en la base de datos
+      const confirmRes = await fetch('/api/admin/video/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadUrl, pathname }),
+      });
+      const confirmData = await confirmRes.json();
+
+      if (confirmData.success) {
+        setLocalConfig(prev => ({ ...prev, videoUrl: confirmData.data.url, videoType: 'upload' }));
+        setConfigData(prev => ({ ...prev, videoUrl: confirmData.data.url, videoType: 'upload' }));
+        setVideoLink('');
+        alert('Video subido exitosamente');
+      } else {
+        alert(confirmData.error || 'Error al guardar el video');
+      }
+    } catch (err) {
       alert('Error de conexión al subir el video');
+      console.error('Upload error:', err);
     } finally {
       setUploadingVideo(false);
     }
