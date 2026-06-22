@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
+
+const SUPABASE_URL = process.env.SUPABASE_URL as string;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+const BUCKET = 'receipts';
 
 export async function POST(request: Request) {
   try {
@@ -26,14 +29,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const blob = await put(`${folder}/${Date.now()}-${file.name}`, file, {
-      access: 'public',
-      addRandomSuffix: true,
+    const fileExt = file.name.split('.').pop() || 'png';
+    const safeName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+    const path = `${folder.replace(/^receipts\//, '')}/${safeName}`;
+    const cleanPath = path.replace(/^\/+/, '');
+
+    // Subir a Supabase Storage
+    const supabasePath = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${cleanPath}`;
+
+    const uploadRes = await fetch(supabasePath, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: Buffer.from(await file.arrayBuffer()),
     });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      console.error('Supabase upload error:', uploadRes.status, errText);
+      throw new Error(`Error al subir: ${uploadRes.status}`);
+    }
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${cleanPath}`;
 
     return NextResponse.json({
       success: true,
-      data: { url: blob.url, type: 'file' },
+      data: { url: publicUrl, type: 'file' },
     });
   } catch (error) {
     console.error('Upload error:', error);
