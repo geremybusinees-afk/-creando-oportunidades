@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -99,6 +99,7 @@ export default function DashboardPage() {
                 const ct = youtubePlayerRef.current?.getCurrentTime();
                 if (ct !== undefined) {
                   setVideoProgress(Math.floor(ct));
+                  if (ct >= 120) setHasWatched2Min(true);
                 }
               } catch {}
             }, 1000);
