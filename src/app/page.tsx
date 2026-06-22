@@ -13,6 +13,32 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notifications, setNotifications] = useState<Array<{ id: number; name: string; country: string }>>([]);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoType, setVideoType] = useState('');
+
+  useEffect(() => {
+    fetch('/api/config/public')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data.videoUrl) {
+          setVideoUrl(data.data.videoUrl);
+          setVideoType(data.data.videoType || '');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function getYoutubeEmbedUrl(url: string): string {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/,
+      /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (const p of patterns) {
+      const m = url.match(p);
+      if (m) return `https://www.youtube.com/embed/${m[1]}?autoplay=1&mute=1&loop=1&playlist=${m[1]}&rel=0`;
+    }
+    return '';
+  }
 
   const nombres = [
     'Julia', 'María', 'Camila', 'Valentina', 'Sofía', 'Isabella', 'Gabriela',
@@ -22,12 +48,7 @@ export default function LandingPage() {
     'Adriana', 'Liliana', 'Mariana', 'Fabiola', 'Raquel', 'Angélica', 'Esther',
   ];
 
-  const paises = [
-    'México', 'Colombia', 'Argentina', 'Perú', 'Chile', 'Ecuador',
-    'Venezuela', 'Guatemala', 'Bolivia', 'República Dominicana', 'Honduras',
-    'Paraguay', 'El Salvador', 'Nicaragua', 'Costa Rica', 'Panamá',
-    'Uruguay', 'Puerto Rico', 'España', 'Estados Unidos',
-  ];
+  const paises = ['México'];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -103,7 +124,18 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24 grid lg:grid-cols-12 gap-12 items-center">
+      {/* Aviso solo México */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-4">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-5 py-3.5 flex items-center justify-center gap-3 text-amber-300 text-sm md:text-base font-medium">
+          <span className="relative flex w-3 h-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full w-3 h-3 bg-amber-500" />
+          </span>
+          <span>🇲🇽 Esta oferta es <strong className="text-amber-200 font-bold">exclusiva para residentes en México</strong>. Aprovecha antes de que termine.</span>
+        </div>
+      </div>
+
+      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-8 pb-24 grid lg:grid-cols-12 gap-12 items-center">
         <div className="lg:col-span-5 relative z-10">
           <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold text-sm mb-8 animate-fade-in-up">
             <span className="w-2 h-2 rounded-full bg-blue-400 mr-2 animate-pulse" />
@@ -117,14 +149,46 @@ export default function LandingPage() {
           </p>
 
           <div className="mb-8 animate-fade-in-up flex justify-center">
-            <div className="relative group">
-              <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 rounded-2xl blur-xl opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
-              <img
-                src="https://cdn.phototourl.com/free/2026-06-19-a9615207-ecc1-433d-808d-c81b10c690d1.png"
-                alt="Estudiantes exitosos"
-                className="relative w-72 md:w-80 lg:w-96 rounded-xl object-cover shadow-2xl border border-white/10"
-              />
-            </div>
+            {videoUrl && videoType === 'youtube' ? (
+              <div className="relative group w-full max-w-[560px]">
+                <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 rounded-2xl blur-xl opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                <div className="relative rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-black aspect-video">
+                  <iframe
+                    src={getYoutubeEmbedUrl(videoUrl)}
+                    className="absolute inset-0 w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    title="Video promocional"
+                  />
+                </div>
+              </div>
+            ) : videoUrl && videoType === 'mp4' ? (
+              <div className="relative group w-full max-w-[560px]">
+                <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 rounded-2xl blur-xl opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                <div className="relative rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-black">
+                  <video
+                    src={videoUrl}
+                    controls
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full rounded-xl max-h-[400px]"
+                  >
+                    Tu navegador no soporta la reproducción de video.
+                  </video>
+                </div>
+              </div>
+            ) : (
+              <div className="relative group">
+                <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500 rounded-2xl blur-xl opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                <img
+                  src="https://cdn.phototourl.com/free/2026-06-19-a9615207-ecc1-433d-808d-c81b10c690d1.png"
+                  alt="Estudiantes exitosos"
+                  className="relative w-72 md:w-80 lg:w-96 rounded-xl object-cover shadow-2xl border border-white/10"
+                />
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-800/40 backdrop-blur-xl p-8 rounded-3xl border border-slate-700/50 shadow-[0_0_40px_-15px_rgba(59,130,246,0.3)] animate-fade-in-up">

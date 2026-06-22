@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { users } from '@/lib/db/schema';
-import { desc } from 'drizzle-orm';
+import { users, verifications } from '@/lib/db/schema';
+import { desc, eq } from 'drizzle-orm';
 
 export async function GET() {
   const session = await auth();
@@ -23,5 +23,18 @@ export async function GET() {
     .from(users)
     .orderBy(desc(users.createdAt));
 
-  return NextResponse.json({ success: true, data: allUsers });
+  // Attach latest verification for each user
+  const usersWithVerifications = await Promise.all(
+    allUsers.map(async (u) => {
+      const [lastVer] = await getDb()
+        .select()
+        .from(verifications)
+        .where(eq(verifications.userId, u.id))
+        .orderBy(desc(verifications.createdAt))
+        .limit(1);
+      return { ...u, verification: lastVer || null };
+    })
+  );
+
+  return NextResponse.json({ success: true, data: usersWithVerifications });
 }

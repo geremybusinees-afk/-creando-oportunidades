@@ -2,18 +2,20 @@ import { NextResponse } from 'next/server';
 import { hash } from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 export async function POST(request: Request) {
   try {
-    const { email, password, name } = await request.json();
+    const { email: rawEmail, password, name } = await request.json();
 
-    if (!email || !password) {
+    if (!rawEmail || !password) {
       return NextResponse.json(
         { success: false, error: 'Email y contraseña requeridos' },
         { status: 400 }
       );
     }
+
+    const email = rawEmail.toLowerCase().trim();
 
     if (password.length < 8) {
       return NextResponse.json(
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     const [existing] = await getDb()
       .select()
       .from(users)
-      .where(eq(users.email, email))
+      .where(sql`LOWER(${users.email}) = ${email}`)
       .limit(1);
 
     if (existing) {

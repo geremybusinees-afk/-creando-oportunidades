@@ -3,10 +3,13 @@ export interface LandingConfig {
   landingSubheadline: string;
   offerLink: string;
   driveLink: string;
+  whatsappGroupUrl?: string;
   platformName: string;
   platformKeywords: string;
   referenceImageUrl?: string;
   referenceImageEnabled?: string;
+  videoUrl?: string;
+  videoType?: 'youtube' | 'mp4' | '';
 }
 
 export interface VerificationResult {

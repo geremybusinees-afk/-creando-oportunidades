@@ -4,19 +4,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  Lock, Unlock, UploadCloud, PlayCircle, CheckCircle2,
-  Search, LogOut, Bell, Check, AlertCircle, ChevronRight, X, AlertTriangle, Film, MonitorPlay,
-  ExternalLink, MessageCircle, Clock, RefreshCw, Eye
+  Lock, UploadCloud, PlayCircle, CheckCircle2,
+  Search, LogOut, Bell, Check, AlertCircle, ChevronRight, X, ExternalLink,
+  MessageCircle, RefreshCw, Clock
 } from 'lucide-react';
-
-declare global {
-  interface Window { YT: any; onYouTubeIframeAPIReady: any; }
-}
 
 const DEFAULT_WHATSAPP_URL = 'https://chat.whatsapp.com/HdOQklvjXDnEmCy3ZIdFJw?mode=gi_t';
 
 export default function DashboardPage() {
-  const { data: session, status, update } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -26,184 +22,164 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const [remainingAttempts, setRemainingAttempts] = useState(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Video state
-  const [videoConfig, setVideoConfig] = useState<{ videoUrl: string; videoType: string } | null>(null);
-  const [publicConfig, setPublicConfig] = useState<Record<string, string>>({});
-  const [videoProgress, setVideoProgress] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
+  const [offerLink, setOfferLink] = useState('');
+  const [driveLink, setDriveLink] = useState('');
+  const [whatsappGroupUrl, setWhatsappGroupUrl] = useState(DEFAULT_WHATSAPP_URL);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoType, setVideoType] = useState('');
   const [videoEnded, setVideoEnded] = useState(false);
-  const [hasWatched2Min, setHasWatched2Min] = useState(false);
-  const [showWarningModal, setShowWarningModal] = useState(false);
-  const [warningMessage, setWarningMessage] = useState('');
-  const [isYoutubeReady, setIsYoutubeReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const youtubePlayerRef = useRef<any>(null);
-  const youtubeTrackingRef = useRef<any>(null);
-  const pollingRef = useRef<any>(null);
-
-  // Estado para la página puente
-  const [bridgedImageUrl, setBridgedImageUrl] = useState<string | null>(null);
+  const ytPlayerRef = useRef<any>(null);
   const [bridgeStatus, setBridgeStatus] = useState<'pending' | 'verified' | 'rejected'>('pending');
   const [bridgeReason, setBridgeReason] = useState<string | null>(null);
   const [bridgeCheckedAt, setBridgeCheckedAt] = useState<Date | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cargar API de YouTube
+  const getYoutubeId = (url: string): string | null => {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  };
+
+  // Fetch config
   useEffect(() => {
-    if (typeof window !== 'undefined' && !window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode!.insertBefore(tag, firstScriptTag);
-      window.onYouTubeIframeAPIReady = () => setIsYoutubeReady(true);
-    } else if (window.YT) {
-      setIsYoutubeReady(true);
-    }
+    fetch('/api/config/public')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.data.offerLink) setOfferLink(data.data.offerLink);
+          if (data.data.driveLink) setDriveLink(data.data.driveLink);
+          if (data.data.whatsappGroupUrl) setWhatsappGroupUrl(data.data.whatsappGroupUrl);
+          if (data.data.videoUrl) setVideoUrl(data.data.videoUrl);
+          if (data.data.videoType) setVideoType(data.data.videoType);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // Cargar configuración pública
+  // YouTube IFrame API - detectar fin del video
+  useEffect(() => {
+    if (!videoUrl || videoType !== 'youtube' || step !== 1) return;
+    const ytId = getYoutubeId(videoUrl);
+    if (!ytId) return;
+
+    const initYTPlayer = () => {
+      if (ytPlayerRef.current) return;
+      ytPlayerRef.current = new (window as any).YT.Player('yt-player', {
+        videoId: ytId,
+        playerVars: {
+          controls: 0,
+          disablekb: 1,
+          modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          iv_load_policy: 3,
+        },
+        events: {
+          onStateChange: (event: any) => {
+            if (event.data === 0) {
+              setVideoEnded(true);
+            }
+          },
+        },
+      });
+    };
+
+    if ((window as any).YT && (window as any).YT.Player) {
+      initYTPlayer();
+    } else {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+      (window as any).onYouTubeIframeAPIReady = initYTPlayer;
+    }
+
+    return () => {
+      if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
+        ytPlayerRef.current.destroy();
+        ytPlayerRef.current = null;
+      }
+    };
+  }, [videoUrl, videoType, step]);
+
+  // Determinar paso inicial basado en el estado del usuario
+  useEffect(() => {
+    if (!session?.user) return;
+    fetch('/api/user/status')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data.status) {
+          const s = data.data.status;
+          if (s === 'verified') setStep(4);
+          else if (s === 'pending_review') {
+            setStep(3);
+            setBridgeStatus('pending');
+          }
+          // else: 'pending' → step 1
+        }
+      })
+      .catch(() => {});
+  }, [session]);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
     }
-
-    fetch('/api/config/public')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.data) {
-          setPublicConfig(data.data);
-          setVideoConfig({
-            videoUrl: data.data.videoUrl || '',
-            videoType: data.data.videoType || 'link',
-          });
-        }
-      })
-      .catch(() => {});
   }, [status, router]);
 
-  // Verificar estado inicial del usuario (para cuando vuelve a login)
-  useEffect(() => {
-    if (session?.user) {
-      const userStatus = (session.user as any).status;
-      if (userStatus === 'verified') {
-        setStep(4);
-      } else if (userStatus === 'pending_review') {
-        setStep(3);
-        startPolling();
+  // Polling para step 3 (bridge page)
+  const checkUserStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/user/status');
+      const data = await res.json();
+      if (data.success) {
+        setBridgeCheckedAt(new Date());
+        const s = data.data.status;
+        if (s === 'verified') {
+          setBridgeStatus('verified');
+          setTimeout(() => setStep(4), 1500);
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        } else if (s === 'pending' || (s === 'pending_review' && data.data.lastVerification?.reason?.includes('Rechazado'))) {
+          setBridgeStatus('rejected');
+          setBridgeReason(data.data.lastVerification?.reason || 'Comprobante no válido');
+          setRemainingAttempts(data.data.maxAttempts ?? remainingAttempts);
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        } else {
+          setBridgeStatus('pending');
+        }
       }
+    } catch {
+      // Silently fail, next poll will retry
     }
-  }, [session]);
+  }, [remainingAttempts]);
 
-  // Limpiar polling al desmontar
   useEffect(() => {
+    if (step === 3 && bridgeStatus === 'pending') {
+      pollingRef.current = setInterval(checkUserStatus, 10000);
+      // Also check immediately on mount
+      checkUserStatus();
+    }
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
     };
-  }, []);
+  }, [step, bridgeStatus, checkUserStatus]);
 
-  // Inicializar reproductor de YouTube
-  useEffect(() => {
-    const ytId = getYoutubeId(videoConfig?.videoUrl);
-    if (!ytId || !isYoutubeReady || youtubePlayerRef.current) return;
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-    const playerDiv = document.getElementById('youtube-player');
-    if (!playerDiv) return;
-
-    youtubePlayerRef.current = new window.YT.Player('youtube-player', {
-      videoId: ytId,
-      width: '100%',
-      height: '100%',
-      playerVars: {
-        rel: 0,
-        modestbranding: 1,
-        controls: 1,
-      },
-      events: {
-        onReady: () => {
-          const dur = youtubePlayerRef.current.getDuration();
-          if (dur) setVideoDuration(dur);
-        },
-        onStateChange: (event: any) => {
-          if (event.data === window.YT.PlayerState.PLAYING) {
-            if (youtubeTrackingRef.current) clearInterval(youtubeTrackingRef.current);
-            youtubeTrackingRef.current = setInterval(() => {
-              try {
-                const ct = youtubePlayerRef.current?.getCurrentTime();
-                if (ct !== undefined) {
-                  setVideoProgress(Math.floor(ct));
-                  if (ct >= 120) setHasWatched2Min(true);
-                }
-              } catch {}
-            }, 1000);
-          } else {
-            if (youtubeTrackingRef.current) {
-              clearInterval(youtubeTrackingRef.current);
-              youtubeTrackingRef.current = null;
-            }
-            if (event.data === window.YT.PlayerState.ENDED) {
-              setVideoEnded(true);
-              try {
-                const dur = youtubePlayerRef.current?.getDuration();
-                if (dur) setVideoProgress(Math.ceil(dur));
-              } catch {}
-            }
-          }
-        },
-      },
-    });
-
-    return () => {
-      if (youtubeTrackingRef.current) clearInterval(youtubeTrackingRef.current);
-    };
-  }, [videoConfig?.videoUrl, isYoutubeReady]);
-
-  // Polling de estado de verificación
-  const startPolling = useCallback(() => {
-    if (pollingRef.current) clearInterval(pollingRef.current);
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        const res = await fetch('/api/user/status');
-        const data = await res.json();
-        if (data.success) {
-          setBridgeCheckedAt(new Date());
-          const userStatus = data.data.status;
-          if (userStatus === 'verified') {
-            setBridgeStatus('verified');
-            // Actualizar sesión
-            await update();
-            // Ir a paso 4 después de breve delay
-            setTimeout(() => {
-              setStep(4);
-              if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
-              }
-            }, 1500);
-          } else if (userStatus === 'pending' && data.data.maxAttempts > 0) {
-            // Fue rechazado pero aún tiene intentos
-            setBridgeStatus('rejected');
-            setBridgeReason(data.data.lastVerification?.reason || 'El comprobante no cumple con los requisitos.');
-            setRemainingAttempts(data.data.maxAttempts);
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
-          } else if (userStatus === 'pending' && data.data.maxAttempts <= 0) {
-            setBridgeStatus('rejected');
-            setBridgeReason('Has agotado todos tus intentos. Contacta al soporte.');
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
-          }
-          // Si sigue pending_review, seguimos polling
-        }
-      } catch {}
-    }, 10000); // Poll cada 10 segundos
-  }, [update]);
+  if (!session?.user) return null;
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -214,7 +190,7 @@ export default function DashboardPage() {
     }
   };
 
-  const startUpload = async () => {
+  const startVerification = async () => {
     if (!selectedImage || !imagePreview) return;
 
     setIsScanning(true);
@@ -231,7 +207,6 @@ export default function DashboardPage() {
     }, 500);
 
     try {
-      // Paso 1: Subir archivo directamente al servidor
       const formData = new FormData();
       formData.append('file', selectedImage);
 
@@ -242,84 +217,40 @@ export default function DashboardPage() {
 
       const uploadData = await uploadRes.json();
       if (!uploadData.success) {
-        throw new Error(uploadData.error || 'Error al subir el archivo');
+        throw new Error(uploadData.error || 'Error al subir imagen');
       }
 
-      const finalUrl = uploadData.data.url;
-      setBridgedImageUrl(finalUrl);
-
-      clearInterval(progressInterval);
-      setScanProgress(100);
-
-      // Paso 2: Guardar comprobante como pendiente de revisión manual
       const verifyRes = await fetch('/api/verify-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: finalUrl }),
+        body: JSON.stringify({ imageUrl: uploadData.data.url }),
       });
 
       const verifyData = await verifyRes.json();
 
+      clearInterval(progressInterval);
+      setScanProgress(100);
+
       if (!verifyData.success) {
-        throw new Error(verifyData.error || 'Error al enviar comprobante');
+        throw new Error(verifyData.error || 'Error al verificar');
       }
 
-      setRemainingAttempts(verifyData.data.remainingAttempts);
-
-      // Ir a la página puente (paso 3)
       setTimeout(() => {
         setIsScanning(false);
+        setRemainingAttempts(verifyData.data.remainingAttempts);
+
+        // Ir a la página puente (paso 3)
+        setBridgeStatus('pending');
+        setBridgeReason(null);
+        setBridgeCheckedAt(null);
         setStep(3);
-        startPolling();
       }, 1000);
 
     } catch (err) {
       clearInterval(progressInterval);
       setIsScanning(false);
-      setError(err instanceof Error ? err.message : 'Error al subir el comprobante');
+      setError(err instanceof Error ? err.message : 'Error al verificar');
     }
-  };
-
-  const handleLogout = async () => {
-    await signOut({ callbackUrl: '/' });
-  };
-
-  // Manejo del progreso del video
-  const handleTimeUpdate = () => {
-    if (videoRef.current && !videoEnded) {
-      const currentTime = videoRef.current.currentTime;
-      setVideoProgress(currentTime);
-      if (currentTime >= 120 && !hasWatched2Min) {
-        setHasWatched2Min(true);
-      }
-    }
-  };
-
-  const handleVideoEnded = () => {
-    setVideoEnded(true);
-    setVideoProgress(videoDuration);
-  };
-
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration);
-    }
-  };
-
-  const handleContinueClick = () => {
-    if (!videoConfig?.videoUrl) {
-      setStep(2);
-      return;
-    }
-
-    if (videoProgress < 120) {
-      const faltante = Math.ceil(120 - videoProgress);
-      setWarningMessage(`⏳ Debes ver al menos 2 minutos del video para continuar.\n\nTe faltan ${faltante} segundo${faltante !== 1 ? 's' : ''}.`);
-      setShowWarningModal(true);
-      return;
-    }
-
-    setStep(2);
   };
 
   const handleReUpload = () => {
@@ -331,68 +262,13 @@ export default function DashboardPage() {
     setError('');
   };
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: '/' });
   };
-
-  const getYoutubeId = (url?: string) => {
-    if (!url) return null;
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : null;
-  };
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!session?.user) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Warning Modal */}
-      {showWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 animate-fade-in-up border border-amber-200">
-            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <AlertTriangle className="w-10 h-10 text-amber-600" />
-            </div>
-            <h3 className="text-xl font-black text-slate-800 text-center mb-4">
-              {videoProgress < 120 ? 'Espera un momento...' : ''}
-            </h3>
-            <p className="text-slate-600 text-center text-base leading-relaxed whitespace-pre-line mb-8">
-              {warningMessage}
-            </p>
-            {videoProgress < 120 && (
-              <div className="mb-6">
-                <div className="flex justify-between text-xs text-slate-500 mb-2">
-                  <span>Tu progreso</span>
-                  <span>{formatTime(videoProgress)} / 2:00</span>
-                </div>
-                <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, (videoProgress / 120) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            <button
-              onClick={() => setShowWarningModal(false)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl transition-colors"
-            >
-              Seguir viendo el video
-            </button>
-          </div>
-        </div>
-      )}
-
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-40">
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
         <div className="text-xl font-black text-slate-800 flex items-center">
           <div className="w-6 h-6 rounded bg-blue-600 text-white flex items-center justify-center text-xs mr-2">VA</div>
           Mastery
@@ -412,11 +288,11 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 py-10">
+      <main className="max-w-4xl mx-auto p-6 py-10">
         <div className="mb-10">
           <div className="flex justify-between text-xs font-bold text-slate-400 mb-3 px-2">
-            <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Video</span>
-            <span className={step >= 2 ? 'text-blue-600' : ''}>Paso 2: Comprobante</span>
+            <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Instrucciones</span>
+            <span className={step >= 2 ? 'text-blue-600' : ''}>Paso 2: Activación</span>
             <span className={step >= 3 ? 'text-blue-600' : ''}>Paso 3: Revisión</span>
             <span className={step >= 4 ? 'text-emerald-600' : ''}>Paso 4: Acceso</span>
           </div>
@@ -428,275 +304,202 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ===== STEP 1: VIDEO ===== */}
         {step === 1 && (
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in-up">
-            <div className="p-6 md:p-8 text-center">
-              <span className="inline-block px-3 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-full mb-3 uppercase tracking-wider">
+            <div className="p-10 text-center">
+              <span className="inline-block px-3 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
                 Acción Requerida
               </span>
-              <h2 className="text-2xl md:text-3xl font-extrabold mb-2 text-slate-800">Mira este video para continuar</h2>
-              <p className="text-slate-500 text-base max-w-2xl mx-auto">
+              <h2 className="text-3xl md:text-4xl font-extrabold mb-4 text-slate-800">Mira este video para continuar</h2>
+              <p className="text-slate-500 text-lg max-w-2xl mx-auto">
                 Te explico exactamente cómo activar tu cuenta gratuita y descargar todo el material del curso sin pagar un centavo.
               </p>
             </div>
-
-            <div className="pb-4">
-              {videoConfig?.videoUrl ? (
-                <>
-                  <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
-                    {getYoutubeId(videoConfig.videoUrl) ? (
-                      <div id="youtube-player" className="w-full h-full" />
-                    ) : videoConfig.videoType === 'link' ? (
-                      <iframe
-                        src={videoConfig.videoUrl}
-                        className="w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <video
-                        ref={videoRef}
-                        src={videoConfig.videoUrl}
-                        className="w-full h-full object-contain bg-black"
-                        controls
-                        onTimeUpdate={handleTimeUpdate}
-                        onLoadedMetadata={handleLoadedMetadata}
-                        onEnded={handleVideoEnded}
-                        playsInline
-                      />
-                    )}
-
-                    {!getYoutubeId(videoConfig.videoUrl) && videoConfig.videoType !== 'link' && !videoEnded && videoDuration > 0 && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3 pointer-events-none">
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all duration-300 ${videoProgress >= 120 ? 'bg-emerald-400' : 'bg-amber-400'}`}
-                                style={{ width: `${Math.min(100, (videoProgress / (videoDuration || 120)) * 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {videoProgress >= 120 ? (
-                              <span className="text-emerald-400 text-xs font-bold flex items-center">
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Mínimo cumplido
-                              </span>
-                            ) : (
-                              <span className="text-amber-400 text-xs font-medium">
-                                {formatTime(videoProgress)} / 2:00
-                              </span>
-                            )}
-                          </div>
-                        </div>
+            <div className="px-10 pb-10">
+              {videoUrl && videoType === 'youtube' && getYoutubeId(videoUrl) ? (
+                <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
+                  <div id="yt-player" className="w-full h-full" />
+                  {videoEnded && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                      <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                        <span className="text-white font-bold text-lg">Video completo ✓</span>
                       </div>
-                    )}
-
-                    {!getYoutubeId(videoConfig.videoUrl) && videoConfig.videoType !== 'link' && videoEnded && (
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-emerald-400/30 flex items-center gap-3">
-                          <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-                          <span className="text-white font-bold text-lg">Video completo ✓</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="aspect-video bg-slate-900 rounded-2xl relative flex items-center justify-center group cursor-pointer overflow-hidden shadow-2xl">
                   <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop')] bg-cover bg-center opacity-50 mix-blend-overlay group-hover:scale-105 transition-transform duration-700" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                    <Film className="w-16 h-16 text-white/50 mb-3" />
-                    <p className="text-white/60 text-sm font-medium">No hay video configurado</p>
+                  <div className="w-24 h-24 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center group-hover:bg-blue-600 transition-all duration-300 shadow-[0_0_50px_rgba(37,99,235,0.5)] z-10 border border-white/20">
+                    <PlayCircle className="w-12 h-12 text-white ml-2" />
+                  </div>
+                  <div className="absolute bottom-6 left-6 right-6 flex justify-between items-center z-10">
+                    <span className="text-white font-medium drop-shadow-md">Guía de Activación - VA Mastery</span>
+                    <span className="bg-black/60 backdrop-blur text-white text-xs px-2 py-1 rounded">04:15</span>
                   </div>
                 </div>
               )}
             </div>
-
-            {videoConfig?.videoUrl && videoDuration > 0 && (
-              <div className="px-4 md:px-6 pb-2">
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <MonitorPlay className="w-4 h-4 text-slate-400" />
-                      <span className="text-slate-600">Progreso del video</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {videoProgress >= 120 ? (
-                        <span className="text-emerald-600 font-bold flex items-center">
-                          <CheckCircle2 className="w-4 h-4 mr-1" /> Mínimo cumplido ✓
-                        </span>
-                      ) : (
-                        <span className="text-amber-600 font-medium">{formatTime(videoProgress)} / 2:00 mínimo</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="h-2 bg-slate-200 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        videoProgress >= 120 ? 'bg-emerald-400' : 'bg-blue-400'
-                      }`}
-                      style={{ width: `${videoDuration > 0 ? (videoProgress / videoDuration) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div className="p-8 bg-slate-50 border-t border-slate-100 text-center">
               <button
-                onClick={handleContinueClick}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-12 rounded-xl text-lg shadow-xl shadow-blue-600/20 transition-all transform hover:-translate-y-1 w-full md:w-auto"
+                onClick={() => setStep(2)}
+                disabled={!!(videoUrl && videoType === 'youtube' && !videoEnded)}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold py-4 px-12 rounded-xl text-lg shadow-xl shadow-blue-600/20 transition-all transform hover:-translate-y-1 w-full md:w-auto"
               >
-                Continuar al Paso 2
+                {videoUrl && videoType === 'youtube' && !videoEnded ? 'Mira el video completo para continuar' : 'Ya vi el video, Continuar al Paso 2'}
               </button>
             </div>
           </div>
         )}
 
-        {/* ===== STEP 2: UPLOAD RECEIPT ===== */}
+        {/* ===== STEP 2: SUBIR COMPROBANTE ===== */}
         {step === 2 && (
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in-up">
-            <div className="p-6 md:p-8 text-center">
-              <span className="inline-block px-3 py-1 bg-blue-100 text-blue-600 text-xs font-bold rounded-full mb-3 uppercase tracking-wider">
-                Paso 2 de 4
-              </span>
-              <h2 className="text-2xl md:text-3xl font-extrabold mb-2 text-slate-800">Sube tu comprobante de registro</h2>
-              <p className="text-slate-500 text-base max-w-2xl mx-auto">
-                Toma una captura de pantalla de tu registro exitoso en la plataforma y súbela aquí.{' '}
-                <strong>Un agente de nuestro equipo verificará tu comprobante manualmente</strong> y te dará acceso al curso.
-              </p>
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden relative animate-fade-in-up min-h-[600px]">
+            <div className="p-10 opacity-10 select-none blur-[3px] pointer-events-none">
+              <h2 className="text-4xl font-black mb-8 text-slate-800">Módulo 1: Fundamentos</h2>
+              <div className="space-y-6">
+                <div className="h-6 bg-slate-400 rounded w-full" />
+                <div className="h-6 bg-slate-400 rounded w-5/6" />
+                <div className="h-64 bg-slate-300 rounded-2xl mt-8" />
+                <div className="grid grid-cols-2 gap-4 mt-8">
+                  <div className="h-20 bg-slate-300 rounded-xl" />
+                  <div className="h-20 bg-slate-300 rounded-xl" />
+                </div>
+              </div>
             </div>
 
-            <div className="px-6 md:px-8 pb-8 max-w-2xl mx-auto">
+            <div className="absolute inset-0 bg-white/85 backdrop-blur-md flex flex-col p-6 md:p-12 overflow-y-auto">
+              <div className="text-center mb-8 max-w-2xl mx-auto">
+                <div className="w-20 h-20 bg-gradient-to-br from-rose-100 to-rose-200 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner border border-rose-300">
+                  <Lock className="w-10 h-10 text-rose-600" />
+                </div>
+                <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">Contenido Bloqueado</h2>
+                <p className="text-slate-600 text-lg">
+                  Para acceder al curso 100% gratis, necesitamos verificar que creaste tu cuenta en la plataforma de pagos asociada.
+                </p>
+              </div>
+
               {error && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start space-x-3 mb-6">
-                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-rose-700 font-medium text-sm">{error}</p>
-                    {remainingAttempts > 0 && (
-                      <p className="text-rose-500 text-xs mt-1">
-                        Te quedan <strong>{remainingAttempts}</strong> intento{remainingAttempts !== 1 ? 's' : ''}
-                      </p>
-                    )}
+                <div className="max-w-4xl mx-auto w-full mb-6">
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-rose-700 font-medium text-sm">{error}</p>
+                      {remainingAttempts > 0 && (
+                        <p className="text-rose-500 text-xs mt-1">
+                          Te quedan {remainingAttempts} intentos
+                        </p>
+                      )}
+                    </div>
+                    <button onClick={() => setError('')} className="text-rose-400 hover:text-rose-600">
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button onClick={() => setError('')} className="text-rose-400 hover:text-rose-600">
-                    <X className="w-4 h-4" />
-                  </button>
                 </div>
               )}
 
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-8">
-                {/* Enlace para registrarse */}
-                <div className="mb-8">
-                  <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center">
-                    <span className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3 shrink-0">
-                      <ExternalLink className="w-4 h-4" />
-                    </span>
-                    1. Regístrate en la plataforma
+              <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto w-full flex-1">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 flex flex-col justify-center">
+                  <h3 className="font-bold text-slate-800 text-lg mb-6 flex items-center">
+                    <span className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-3">1</span>
+                    Regístrate en la plataforma
                   </h3>
-                  <p className="text-sm text-slate-600 mb-4 ml-11">
-                    Haz clic en el botón, crea tu cuenta y verifica tu correo electrónico.
+                  <p className="text-sm text-slate-600 mb-6">
+                    Haz clic en el botón de abajo, completa tu registro en la página externa y verifica tu correo electrónico.
                   </p>
-                  <div className="ml-11">
-                    <a
-                      href={publicConfig.offerLink || '#'}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg transition-all group"
-                    >
-                      <span>Ir a crear mi cuenta</span>
-                      <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                    </a>
-                  </div>
+                  <a
+                    href={offerLink || '#'}
+                    target={offerLink ? '_blank' : undefined}
+                    rel={offerLink ? 'noreferrer' : undefined}
+                    onClick={e => { if (!offerLink) { e.preventDefault(); alert('Primero configura el enlace de la oferta en el panel de administración.'); } }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all flex items-center justify-between group"
+                  >
+                    <span className="flex items-center">
+                      Ir a crear mi cuenta
+                      {offerLink && <ExternalLink className="w-3.5 h-3.5 ml-2 opacity-60" />}
+                    </span>
+                    <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </a>
                 </div>
 
-                <div className="h-px bg-blue-200/50 my-6" />
-
-                {/* Subir comprobante */}
-                <div>
-                  <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center">
-                    <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-3 shrink-0">
-                      <UploadCloud className="w-4 h-4" />
-                    </span>
-                    2. Sube tu captura de pantalla
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-8 flex flex-col justify-center relative overflow-hidden">
+                  <h3 className="font-bold text-blue-900 text-lg mb-6 flex items-center relative z-10">
+                    <span className="w-8 h-8 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center mr-3">2</span>
+                    Sube tu comprobante
                   </h3>
-                  <p className="text-sm text-slate-600 mb-4 ml-11">
-                    Toma un screenshot donde se vea tu registro exitoso y súbela aquí. Aceptamos cualquier tipo de archivo.
-                  </p>
 
-                  <div className="ml-11">
-                    {!imagePreview ? (
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="border-2 border-dashed border-blue-300 rounded-xl p-8 bg-white hover:bg-blue-50/50 transition-colors cursor-pointer text-center"
-                      >
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleImageSelect}
-                          className="hidden"
-                        />
-                        <UploadCloud className="w-12 h-12 text-blue-400 mx-auto mb-4" />
-                        <h4 className="font-bold text-slate-700 mb-2">Haz clic para seleccionar tu comprobante</h4>
-                        <p className="text-xs text-slate-500">Selecciona la captura de pantalla de tu registro</p>
-                      </div>
-                    ) : (
-                      <div className="bg-white rounded-xl p-4 border border-blue-200">
-                        <div className="relative h-48 rounded-lg overflow-hidden mb-4 border border-slate-200 bg-slate-100">
-                          <img src={imagePreview} alt="Preview" className="w-full h-full object-contain" />
-                          {isScanning && (
-                            <>
-                              <div className="absolute inset-0 bg-blue-900/40 backdrop-blur-[1px]" />
-                              <div className="absolute left-0 right-0 h-1 bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,1)] z-20 animate-scan" />
-                              <div className="absolute inset-0 flex items-center justify-center z-30">
-                                <span className="text-3xl font-black text-white drop-shadow-lg">{scanProgress}%</span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        {!isScanning ? (
-                          <div className="flex space-x-3">
-                            <button
-                              onClick={() => {
-                                setSelectedImage(null);
-                                setImagePreview(null);
-                              }}
-                              className="px-5 py-3 bg-slate-100 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-200 transition-colors"
-                            >
-                              Cambiar imagen
-                            </button>
-                            <button
-                              onClick={startUpload}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center transition-colors shadow-lg shadow-blue-600/20"
-                              disabled={remainingAttempts <= 0}
-                            >
-                              <UploadCloud className="w-5 h-5 mr-2" /> Enviar comprobante
-                            </button>
-                          </div>
-                        ) : (
-                          <p className="text-center text-sm font-bold text-blue-600 animate-pulse">
-                            Subiendo comprobante...
-                          </p>
+                  {!imagePreview ? (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-blue-300 rounded-xl p-8 bg-white hover:bg-blue-100/50 transition-colors cursor-pointer text-center relative z-10"
+                    >
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                      <UploadCloud className="w-12 h-12 text-blue-500 mx-auto mb-4" />
+                      <h4 className="font-bold text-blue-900 mb-2">Haz clic para subir imagen</h4>
+                      <p className="text-xs text-blue-600 mb-4">Sube una captura de pantalla de tu registro exitoso.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-xl p-4 border border-blue-200 relative z-10">
+                      <div className="relative h-40 rounded-lg overflow-hidden mb-4 border border-slate-200 bg-slate-100">
+                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                        {isScanning && (
+                          <>
+                            <div className="absolute inset-0 bg-blue-900/40 backdrop-blur-[1px]" />
+                            <div className="absolute left-0 right-0 h-1 bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,1)] z-20 animate-scan" />
+                            <div className="absolute inset-0 flex items-center justify-center z-30">
+                              <span className="text-3xl font-black text-white drop-shadow-lg">{scanProgress}%</span>
+                            </div>
+                          </>
                         )}
                       </div>
-                    )}
+                      {!isScanning ? (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedImage(null);
+                              setImagePreview(null);
+                            }}
+                            className="px-4 py-3 bg-slate-100 text-slate-600 font-semibold rounded-lg text-sm hover:bg-slate-200"
+                          >
+                            Cambiar
+                          </button>
+                          <button
+                            onClick={startVerification}
+                            className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 flex items-center justify-center disabled:opacity-50"
+                            disabled={remainingAttempts <= 0}
+                          >
+                            <UploadCloud className="w-4 h-4 mr-2" /> Enviar comprobante
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-center text-sm font-bold text-blue-600 animate-pulse">
+                          Subiendo comprobante...
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                    {remainingAttempts <= 3 && (
-                      <div className="mt-3 text-xs text-slate-500 text-center">
-                        Intentos restantes: {remainingAttempts}/3
-                      </div>
-                    )}
-                  </div>
+                  {remainingAttempts <= 3 && !isScanning && (
+                    <div className="mt-3 text-xs text-blue-600 text-center relative z-10">
+                      Intentos restantes: {remainingAttempts}/3
+                    </div>
+                  )}
+
+                  <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-200/50 rounded-full blur-3xl pointer-events-none" />
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ===== STEP 3: BRIDGE PAGE (MANUAL REVIEW) ===== */}
+        {/* ===== STEP 3: PUENTE (REVISIÓN MANUAL) ===== */}
         {step === 3 && (
           <div className="animate-fade-in-up">
             {bridgeStatus === 'pending' && (
@@ -749,7 +552,7 @@ export default function DashboardPage() {
                       Mientras nuestro equipo verifica tu registro, únete al grupo de WhatsApp para recibir seguimiento personalizado. Ahí te daremos el acceso completo y podrás resolver todas tus dudas directamente con nosotros.
                     </p>
                     <a
-                      href={publicConfig.whatsappGroupUrl || DEFAULT_WHATSAPP_URL}
+                      href={whatsappGroupUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-10 rounded-xl text-lg shadow-xl shadow-emerald-500/30 transition-all transform hover:-translate-y-1"
@@ -832,7 +635,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ===== STEP 4: ACCESS GRANTED ===== */}
         {step === 4 && (
           <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-emerald-100 animate-fade-in-up">
             <div className="bg-gradient-to-b from-emerald-50 to-white p-12 text-center border-b border-slate-100 relative overflow-hidden">
@@ -841,7 +643,7 @@ export default function DashboardPage() {
                 <Check className="w-12 h-12 text-emerald-500" />
               </div>
               <h2 className="relative z-10 text-4xl font-black text-slate-800 mb-3 tracking-tight">¡Acceso Concedido!</h2>
-              <p className="relative z-10 text-emerald-700 font-semibold text-lg">Tu cuenta ha sido verificada exitosamente por nuestro equipo.</p>
+              <p className="relative z-10 text-emerald-700 font-semibold text-lg">Tu cuenta ha sido verificada exitosamente.</p>
             </div>
             <div className="p-10 flex flex-col md:flex-row items-center gap-10">
               <div className="w-full md:w-1/3 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
@@ -866,25 +668,18 @@ export default function DashboardPage() {
                   Hemos preparado una carpeta segura con todos los videos y recursos. Puedes descargarlos a tu computadora o verlos directamente online.
                 </p>
                 <a
-                  href={publicConfig.driveLink || '#'}
-                  target="_blank"
-                  rel="noreferrer"
+                  href={driveLink || '#'}
+                  target={driveLink ? '_blank' : undefined}
+                  rel={driveLink ? 'noreferrer' : undefined}
+                  onClick={e => { if (!driveLink) { e.preventDefault(); alert('Primero configura el enlace del curso en el panel de administración.'); } }}
                   className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-8 rounded-xl shadow-xl shadow-emerald-600/30 transition-transform transform hover:-translate-y-1 w-full md:w-auto"
                 >
-                  Abrir Carpeta del Curso
+                  <span className="flex items-center">
+                    Abrir Carpeta del Curso
+                    {driveLink && <ExternalLink className="w-4 h-4 ml-2" />}
+                  </span>
                   <ChevronRight className="ml-2 w-5 h-5" />
                 </a>
-                <div className="mt-6 flex items-center justify-center md:justify-start gap-4">
-                  <a
-                    href={publicConfig.whatsappGroupUrl || DEFAULT_WHATSAPP_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-medium text-sm transition-colors"
-                  >
-                    <MessageCircle className="w-4 h-4 mr-1" />
-                    Unirme al grupo de soporte
-                  </a>
-                </div>
               </div>
             </div>
           </div>

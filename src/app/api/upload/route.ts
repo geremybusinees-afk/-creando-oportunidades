@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server';
+import { put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
 
-const SUPABASE_URL = 'https://ixmuvazbuepcedguvbpx.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const BUCKET = 'receipts';
-
-// POST /api/upload — Recibir archivo y subirlo directamente a Supabase Storage
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -15,47 +11,44 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
+    const folder = (formData.get('folder') as string) || `receipts/${session.user.id}`;
 
     if (!file) {
       return NextResponse.json({ success: false, error: 'Archivo requerido' }, { status: 400 });
     }
 
-    const timestamp = Date.now();
-    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const pathname = `${session.user.id}/${timestamp}-${safeFileName}`;
+    const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+    const isVideo = videoTypes.includes(file.type);
+    const isImage = imageTypes.includes(file.type);
 
-    // Leer el archivo como ArrayBuffer y convertirlo a Uint8Array
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
-
-    // Subir a Supabase Storage usando la API REST
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${pathname}`;
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': file.type || 'application/octet-stream',
-        'x-upsert': 'true',
-      },
-      body: buffer,
-    });
-
-    if (!uploadRes.ok) {
-      const errText = await uploadRes.text();
-      throw new Error(`Supabase upload failed: ${uploadRes.status} ${errText}`);
+    if (!isImage && !isVideo) {
+      return NextResponse.json(
+        { success: false, error: 'Solo se permiten imágenes (PNG, JPG, WebP) o videos (MP4, WebM)' },
+        { status: 400 }
+      );
     }
 
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${pathname}`;
+    const maxSize = isVideo ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      const sizeLabel = isVideo ? '200MB' : '10MB';
+      return NextResponse.json(
+        { success: false, error: `El archivo debe ser menor a ${sizeLabel}` },
+        { status: 400 }
+      );
+    }
+
+    const blob = await put(`${folder}/${Date.now()}-${file.name}`, file, {
+      access: 'public',
+      addRandomSuffix: true,
+    });
 
     return NextResponse.json({
       success: true,
-      data: {
-        url: publicUrl,
-        pathname,
-      },
+      data: { url: blob.url, type: isVideo ? 'video' : 'image' },
     });
   } catch (error) {
-    console.error('Error uploading file:', error);
+    console.error('Upload error:', error);
     return NextResponse.json(
       { success: false, error: 'Error al subir el archivo' },
       { status: 500 }
