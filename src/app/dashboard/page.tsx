@@ -40,6 +40,9 @@ export default function DashboardPage() {
     return match ? match[1] : null;
   };
 
+  // Detectar si es video de YouTube basándose en la URL
+  const isYoutubeVideo = videoUrl && getYoutubeId(videoUrl);
+
   // Fetch config
   useEffect(() => {
     fetch('/api/config/public')
@@ -58,7 +61,7 @@ export default function DashboardPage() {
 
   // YouTube IFrame API - detectar fin del video
   useEffect(() => {
-    if (!videoUrl || videoType !== 'youtube' || step !== 1) return;
+    if (!isYoutubeVideo || step !== 1) return;
     const ytId = getYoutubeId(videoUrl);
     if (!ytId) return;
 
@@ -139,7 +142,7 @@ export default function DashboardPage() {
         ytPlayerRef.current = null;
       }
     };
-  }, [videoUrl, videoType, step]);
+  }, [isYoutubeVideo, videoUrl, step]);
 
   // Determinar paso inicial basado en el estado del usuario
   useEffect(() => {
@@ -357,7 +360,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="px-10 pb-10">
-              {videoUrl && videoType === 'youtube' && getYoutubeId(videoUrl) ? (
+              {isYoutubeVideo ? (
                 <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
                   <div ref={ytPlayerDivRef} className="w-full h-full" />
                   {videoEnded && (
@@ -386,10 +389,10 @@ export default function DashboardPage() {
             <div className="p-8 bg-slate-50 border-t border-slate-100 text-center">
               <button
                 onClick={() => setStep(2)}
-                disabled={!!(videoUrl && videoType === 'youtube' && !videoEnded)}
+                disabled={!!(isYoutubeVideo && !videoEnded)}
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white font-bold py-4 px-12 rounded-xl text-lg shadow-xl shadow-blue-600/20 transition-all transform hover:-translate-y-1 w-full md:w-auto"
               >
-                {videoUrl && videoType === 'youtube' && !videoEnded ? 'Mira el video completo para continuar' : 'Ya vi el video, Continuar al Paso 2'}
+                {isYoutubeVideo && !videoEnded ? 'Mira el video completo para continuar' : 'Ya vi el video, Continuar al Paso 2'}
               </button>
             </div>
           </div>
