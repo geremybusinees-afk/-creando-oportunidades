@@ -10,7 +10,12 @@ export function getDb() {
     if (!url) {
       throw new Error('DATABASE_URL no configurada');
     }
-    const sql = postgres(url, { prepare: false });
+    const sql = postgres(url, {
+      prepare: false,
+      max: 1,
+      idle_timeout: 5,
+      connect_timeout: 10,
+    });
     _db = drizzle(sql, { schema });
   }
   return _db;
