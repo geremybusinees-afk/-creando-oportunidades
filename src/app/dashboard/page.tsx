@@ -227,11 +227,18 @@ export default function DashboardPage() {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setError('');
-      setSelectedImage(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
+    if (!file) return;
+    setError('');
+    setSelectedImage(file);
+    // Usar FileReader para vista previa (más confiable que createObjectURL)
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setImagePreview(ev.target?.result as string);
+    };
+    reader.onerror = () => {
+      setError('No se pudo leer el archivo');
+    };
+    reader.readAsDataURL(file);
   };
 
   const startVerification = async () => {
@@ -468,62 +475,67 @@ export default function DashboardPage() {
                   </a>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-8 flex flex-col justify-center relative overflow-hidden">
-                  <h3 className="font-bold text-blue-900 text-lg mb-6 flex items-center relative z-10">
-                    <span className="w-8 h-8 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center mr-3">2</span>
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 md:p-8 flex flex-col justify-center relative overflow-hidden">
+                  <h3 className="font-bold text-blue-900 text-lg mb-4 flex items-center relative z-10">
+                    <span className="w-8 h-8 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center mr-3 shrink-0">2</span>
                     Sube tu comprobante
                   </h3>
 
-                  {!imagePreview ? (
-                    <label className="border-2 border-dashed border-blue-300 rounded-xl p-8 bg-white hover:bg-blue-100/50 transition-colors cursor-pointer text-center relative z-10 block">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleImageSelect}
-                        className="hidden"
-                      />
-                      <UploadCloud className="w-12 h-12 text-blue-500 mx-auto mb-4" />
-                      <h4 className="font-bold text-blue-900 mb-2">Haz clic para seleccionar imagen</h4>
-                      <p className="text-xs text-blue-600 mb-4">Selecciona la captura de pantalla de tu registro exitoso</p>
-                      <span className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors">
-                        Elegir archivo
-                      </span>
-                    </label>
-                  ) : (
-                    <div className="bg-white rounded-xl p-4 border border-blue-200 relative z-10">
-                      <div className="relative h-40 rounded-lg overflow-hidden mb-4 border border-slate-200 bg-slate-100">
+                  {/* Selector de archivo visible */}
+                  <div className="space-y-3 relative z-10">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleImageSelect}
+                      className="block w-full text-sm text-slate-600
+                        file:mr-4 file:py-2.5 file:px-5
+                        file:rounded-xl file:border-0
+                        file:text-sm file:font-bold
+                        file:bg-blue-600 file:text-white
+                        hover:file:bg-blue-700 file:cursor-pointer file:transition-colors
+                        bg-white rounded-xl border border-blue-200 p-2"
+                    />
+                    <p className="text-xs text-blue-600 text-center">
+                      Selecciona cualquier imagen de tu registro exitoso
+                    </p>
+                  </div>
+
+                  {/* Vista previa */}
+                  {imagePreview && (
+                    <div className="mt-4 bg-white rounded-xl p-3 border border-blue-200 relative z-10">
+                      <div className="relative h-40 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
                         <img src={imagePreview} alt="Vista previa" className="w-full h-full object-contain" />
                         {isScanning && (
                           <>
                             <div className="absolute inset-0 bg-blue-900/40 backdrop-blur-[1px]" />
-                            <div className="absolute left-0 right-0 h-1 bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,1)] z-20 animate-scan" />
                             <div className="absolute inset-0 flex items-center justify-center z-30">
                               <span className="text-3xl font-black text-white drop-shadow-lg">{scanProgress}%</span>
                             </div>
                           </>
                         )}
                       </div>
+                      <p className="text-xs text-blue-600 text-center mt-2 font-medium truncate">
+                        {selectedImage?.name}
+                      </p>
+
                       {!isScanning ? (
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 mt-3">
                           <button
                             onClick={startVerification}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             disabled={remainingAttempts <= 0}
+                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl flex items-center justify-center transition-colors"
                           >
                             <UploadCloud className="w-5 h-5 mr-2" /> Enviar comprobante
                           </button>
                           <button
-                            onClick={() => {
-                              setSelectedImage(null);
-                              setImagePreview(null);
-                            }}
+                            onClick={() => { setSelectedImage(null); setImagePreview(null); }}
                             className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 rounded-lg text-sm transition-colors"
                           >
                             Cambiar imagen
                           </button>
                         </div>
                       ) : (
-                        <p className="text-center text-sm font-bold text-blue-600 animate-pulse">
+                        <p className="text-center text-sm font-bold text-blue-600 animate-pulse mt-3">
                           Enviando comprobante...
                         </p>
                       )}
@@ -531,9 +543,9 @@ export default function DashboardPage() {
                   )}
 
                   {!isScanning && (
-                    <div className="mt-4 text-xs text-blue-600 text-center relative z-10">
+                    <p className="mt-4 text-xs text-blue-600 text-center relative z-10">
                       Intentos disponibles: {remainingAttempts}/3
-                    </div>
+                    </p>
                   )}
 
                   <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-200/50 rounded-full blur-3xl pointer-events-none" />
