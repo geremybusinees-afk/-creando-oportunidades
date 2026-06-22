@@ -8,7 +8,7 @@ export async function GET() {
     const configMap = Object.fromEntries(configRows.map((c) => [c.key, c.value]));
 
     // Solo devolver configuraciones públicas
-    const publicKeys = ['videoUrl', 'videoType', 'landingHeadline', 'landingSubheadline', 'offerLink', 'driveLink', 'platformName', 'referenceImageUrl'];
+    const publicKeys = ['videoUrl', 'videoType', 'landingHeadline', 'landingSubheadline', 'offerLink', 'driveLink', 'platformName', 'referenceImageUrl', 'whatsappGroupUrl'];
     const publicConfig: Record<string, string> = {};
     for (const key of publicKeys) {
       if (configMap[key]) {

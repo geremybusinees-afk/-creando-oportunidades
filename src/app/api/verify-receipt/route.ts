@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { verifications, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
+// POST /api/verify-receipt — Guardar comprobante para revisión MANUAL
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -34,32 +35,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Usuario no encontrado' }, { status: 404 });
     }
 
-    // Guardar verificación (sin IA — comprobante guardado para revisión manual)
+    if (user.maxAttempts <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'Has agotado tus intentos. Contacta al soporte.' },
+        { status: 400 }
+      );
+    }
+
+    // Guardar verificación como PENDIENTE (revisión manual)
     await getDb()
       .insert(verifications)
       .values({
         userId,
         imageUrl,
-        verified: true,
-        confidence: 100,
-        aiResponse: { method: 'auto-verify', note: 'Verificación automática sin IA' },
-        reason: 'Comprobante recibido correctamente. Acceso concedido.',
+        imageBlobUrl: imageUrl,
+        verified: false,
+        confidence: 0,
+        aiResponse: { method: 'manual-review', status: 'pending' },
+        reason: 'Pendiente de revisión manual por el administrador',
         ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       });
 
-    // Marcar usuario como verificado
+    // Marcar usuario como 'pending_review' (en revisión)
     await getDb()
       .update(users)
-      .set({ status: 'verified', maxAttempts: 3, updatedAt: new Date() })
+      .set({
+        status: 'pending_review',
+        maxAttempts: user.maxAttempts - 1,
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, userId));
 
     return NextResponse.json({
       success: true,
       data: {
-        verified: true,
-        confidence: 100,
-        reason: 'Comprobante recibido correctamente. Acceso concedido.',
-        remainingAttempts: 3,
+        verified: false,
+        status: 'pending_review',
+        message: 'Comprobante recibido. Pendiente de revisión manual.',
+        remainingAttempts: user.maxAttempts - 1,
       },
     });
   } catch (error) {
