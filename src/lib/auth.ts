@@ -1,9 +1,19 @@
-import NextAuth from 'next-auth';
+import NextAuth, { CredentialsSignin } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { sql } from 'drizzle-orm';
+
+/**
+ * Crea un CredentialsSignin con un `code` personalizado que el cliente
+ * puede leer desde la URL o el resultado de signIn().
+ */
+function authError(code: string): CredentialsSignin {
+  const err = new CredentialsSignin();
+  err.code = code;
+  return err;
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -15,22 +25,38 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          return null;
+          throw authError('FALTAN_CAMPOS');
         }
 
         const email = (credentials.email as string).toLowerCase().trim();
         const password = credentials.password as string;
 
-        const [user] = await getDb()
-          .select()
-          .from(users)
-          .where(sql`LOWER(${users.email}) = ${email}`)
-          .limit(1);
+        let user;
+        try {
+          const rows = await getDb()
+            .select()
+            .from(users)
+            .where(sql`LOWER(${users.email}) = ${email}`)
+            .limit(1);
+          user = rows[0];
+        } catch {
+          throw authError('ERROR_DB');
+        }
 
-        if (!user) return null;
+        if (!user) {
+          throw authError('USUARIO_NO_ENCONTRADO');
+        }
 
-        const isValid = await compare(password, user.password);
-        if (!isValid) return null;
+        let isValid = false;
+        try {
+          isValid = await compare(password, user.password);
+        } catch {
+          throw authError('ERROR_BCRYPT');
+        }
+
+        if (!isValid) {
+          throw authError('CONTRASENA_INCORRECTA');
+        }
 
         return {
           id: String(user.id),
