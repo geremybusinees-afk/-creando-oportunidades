@@ -339,7 +339,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 py-10">
+      <main className="max-w-5xl mx-auto p-6 py-10">
         <div className="mb-10">
           <div className="flex justify-between text-xs font-bold text-slate-400 mb-3 px-2">
             <span className={step >= 1 ? 'text-blue-600' : ''}>Paso 1: Instrucciones</span>
@@ -357,16 +357,16 @@ export default function DashboardPage() {
 
         {step === 1 && (
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in-up">
-            <div className="p-10 text-center">
+            <div className="p-6 text-center">
               <span className="inline-block px-3 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
                 Acción Requerida
               </span>
-              <h2 className="text-3xl md:text-4xl font-extrabold mb-4 text-slate-800">Mira este video para continuar</h2>
-              <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              <h2 className="text-xl md:text-2xl font-extrabold mb-3 text-slate-800">Mira este video para continuar</h2>
+              <p className="text-slate-500 text-base max-w-2xl mx-auto">
                 Te explico exactamente cómo activar tu cuenta gratuita y descargar todo el material del curso sin pagar un centavo.
               </p>
             </div>
-            <div className="px-10 pb-10">
+            <div className="px-2 pb-6">
               {isYoutubeVideo ? (
                 <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
                   <div ref={ytPlayerDivRef} className="w-full h-full" />
@@ -394,6 +394,11 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="p-8 bg-slate-50 border-t border-slate-100 text-center">
+              {videoEnded && (
+                <p className="text-red-600 font-bold text-base md:text-lg mb-4 bg-red-50 border border-red-200 rounded-xl py-3 px-6 inline-block">
+                  OJO: el registro en santander debe ser completo desde aqui, no en links externos.
+                </p>
+              )}
               <button
                 onClick={() => setStep(2)}
                 disabled={!!(isYoutubeVideo && !videoEnded)}
